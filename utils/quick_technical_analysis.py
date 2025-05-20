@@ -68,16 +68,22 @@ def fetch_and_store_intraday(ticker, interval='5m', range_='1d'):
     else:
         print(f"No intraday prices to save for {ticker}.")
 
+def fetch_and_store_intraday_for_all(tickers, interval='5m', range_='1d'):
+    """Fetch and store intraday data for all tickers."""
+    for ticker in tickers:
+        print(f"Fetching and storing intraday data for {ticker}...")
+        fetch_and_store_intraday(ticker, interval=interval, range_=range_)
+
 # Example usage:
 if __name__ == "__main__":
     tickers = [
         "PETR4", "VALE3", "ITUB4", "AMER3", "B3SA3", "MGLU3", "LREN3", "ITSA4", "BBAS3", "RENT3", "ABEV3", "SUZB3", "WEG3", "BRFS3", "BBDC4", "CRFB3", "BPAC11", "GGBR3", "EMBR3", "CMIN3", "ITSA4", "RDOR3", "RAIZ4", "PETZ3", "PSSA3", "VBBR3"
     ]
+    # Insert all tickers' prices into the table first
+    fetch_and_store_intraday_for_all(tickers, interval='5m', range_='1d')
+    # Then, for each ticker, fetch from DB and print signal
+    from utils.database import fetch_intraday_prices
     for ticker in tickers:
-        # Fetch from API and store in DB
-        fetch_and_store_intraday(ticker, interval='5m', range_='1d')
-        # Fetch from DB for analysis and charting
-        from utils.database import fetch_intraday_prices
         prices = fetch_intraday_prices(ticker)
         signal, high, low = get_price_signals(prices)
         print(f"{ticker}: Signal: {signal}, High: {high}, Low: {low}")

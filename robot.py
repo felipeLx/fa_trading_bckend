@@ -56,6 +56,13 @@ def monitor_and_trade(account_balance, risk_per_trade):
     print("Running technical analysis...")
     run_technical_analysis()
 
+    print("Fetching and storing latest intraday (5m) data for all tickers...")
+    from utils.quick_technical_analysis import fetch_and_store_intraday_for_all
+    tickers = [
+        "PETR4", "VALE3", "ITUB4", "AMER3", "B3SA3", "MGLU3", "LREN3", "ITSA4", "BBAS3", "RENT3", "ABEV3", "SUZB3", "WEG3", "BRFS3", "BBDC4", "CRFB3", "BPAC11", "GGBR3", "EMBR3", "CMIN3", "ITSA4", "RDOR3", "RAIZ4", "PETZ3", "PSSA3", "VBBR3"
+    ]
+    fetch_and_store_intraday_for_all(tickers, interval='5m', range_='1d')
+
     print("Fetching data for analysis...")
 
     # Fetch data from the database
