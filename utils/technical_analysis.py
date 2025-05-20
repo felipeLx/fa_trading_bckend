@@ -219,15 +219,62 @@ def calculate_macd(prices, short_period=12, long_period=26, signal_period=9):
 
     return macd, signal_line
 
+def calculate_beta_from_returns(asset_ticker, market_ticker, lookback_days=60):
+    """
+    Calculate beta using linear regression on historical returns for asset and market index.
+    Returns beta or None if data is insufficient.
+    """
+    from utils.database import fetch_historical_prices
+    import pandas as pd
+    import numpy as np
+    from sklearn.linear_model import LinearRegression
+
+    # Fetch historical prices from the database
+    asset_prices = fetch_historical_prices(asset_ticker)
+    market_prices = fetch_historical_prices(market_ticker)
+
+    if not asset_prices or not market_prices:
+        print(f"Insufficient price data for {asset_ticker} or {market_ticker}.")
+        return None
+
+    # Convert to DataFrame and sort by date ascending
+    asset_df = pd.DataFrame(asset_prices)
+    market_df = pd.DataFrame(market_prices)
+    asset_df['date'] = pd.to_datetime(asset_df['date'])
+    market_df['date'] = pd.to_datetime(market_df['date'])
+    asset_df = asset_df.sort_values('date').tail(lookback_days)
+    market_df = market_df.sort_values('date').tail(lookback_days)
+
+    # Merge on date to align
+    merged = pd.merge(asset_df[['date', 'close']], market_df[['date', 'close']], on='date', suffixes=('_asset', '_market'))
+    if len(merged) < 2:
+        print("Not enough overlapping data to calculate beta.")
+        return None
+
+    # Calculate daily returns
+    merged['asset_return'] = merged['close_asset'].pct_change()
+    merged['market_return'] = merged['close_market'].pct_change()
+    merged = merged.dropna(subset=['asset_return', 'market_return'])
+    if len(merged) < 2:
+        print("Not enough return data to calculate beta.")
+        return None
+
+    # Linear regression: asset_return = alpha + beta * market_return
+    X = merged['market_return'].values.reshape(-1, 1)
+    y = merged['asset_return'].values
+    reg = LinearRegression().fit(X, y)
+    beta = reg.coef_[0]
+    return beta
+
 def run_technical_analysis():
-    tickers = ["PETR4", "VALE3", "ITUB4", "AMER3", "B3SA3", "MGLU3", "LREN3", "ITSA4", "BBAS3", "RENT3", "ABEV3", "SUZB3", "WEG3", "BRFS3", "BBDC4", "CRFB3", "BPAC11", "GGBR3", "EMBR3", "CMIN3", "ITSA4", "RDOR3", "RAIZ4", "PETZ3", "PSSA3", "VBBR3"]
+    tickers = ["IBOV","PETR4", "VALE3", "ITUB4", "AMER3", "B3SA3", "MGLU3", "LREN3", "ITSA4", "BBAS3", "RENT3", "ABEV3", "SUZB3", "WEG3", "BRFS3", "BBDC4", "CRFB3", "BPAC11", "GGBR3", "EMBR3", "CMIN3", "ITSA4", "RDOR3", "RAIZ4", "PETZ3", "PSSA3", "VBBR3"]
 
     all_features = []
     all_labels = []
 
     for ticker in tickers:
         print(f"Fetching all BRAPI data for {ticker}...")
-        market_data = fetch_brapi_data(ticker, interval='1d', range_='1mo')
+        market_data = fetch_brapi_data(ticker, interval='1d', range_='1y')
 
         if market_data:
             print(f"Processing data for {ticker}...")

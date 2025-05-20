@@ -76,8 +76,17 @@ def monitor_and_trade(account_balance, risk_per_trade):
             continue
 
         # Example scoring logic based on RSI and beta
-        rsi = daily_analysis[0].get('rsi')  # Most recent RSI
-        beta = asset_analysis[0].get('beta')
+        rsi = next((row.get('rsi') for row in daily_analysis if row.get('rsi') is not None), None)  # Get first non-None RSI
+        beta_raw = asset_analysis[0].get('beta')
+        try:
+            beta = float(beta_raw)
+        except (TypeError, ValueError):
+            print(f"Invalid or missing beta for {ticker} (value: {beta_raw}). Attempting to calculate beta from returns...")
+            from utils.technical_analysis import calculate_beta_from_returns
+            beta = calculate_beta_from_returns(ticker, "IBOV")
+            if beta is None:
+                print(f"Could not calculate beta for {ticker}. Skipping...")
+                continue
 
         if rsi is None or beta is None:
             print(f"Missing RSI or beta for {ticker}. Skipping...")
@@ -107,37 +116,32 @@ def monitor_and_trade(account_balance, risk_per_trade):
     stop_loss, take_profit = calculate_stop_loss_take_profit_levels(historical_prices)
     print(f"Stop-loss: {stop_loss}, Take-profit: {take_profit}")
 
-    # Monitor the best asset in real-time
+    # --- Use quick technical analysis for real-time trade signals ---
+    from utils.database import fetch_intraday_prices
+    from utils.quick_technical_analysis import get_price_signals
+
     while True:
-        print(f"Fetching real-time data for {best_asset}...")
-        data = fetch_realtime_data(best_asset)
+        print(f"Fetching intraday (5m) data for {best_asset}...")
+        intraday_prices = fetch_intraday_prices(best_asset)
+        signal, high, low = get_price_signals(intraday_prices)
+        print(f"Quick signal: {signal}, High: {high}, Low: {low}")
 
-        if data is None:
-            print(f"No data found for {best_asset}. Retrying...")
-            time.sleep(300)  # Wait 5 minutes before retrying
-            continue
-
-        print("Calculating indicators...")
-        data = calculate_moving_averages(data)
-        data = calculate_rsi(data)
-        data = calculate_macd(data)
-        data = generate_signals(data)
-
-        signal = data['Signal'].iloc[-1]
-        current_price = data['Close'].iloc[-1]
-
-        print(f"Signal: {signal}, Current Price: {current_price}")
-
-        if signal == 1:  # Buy signal
-            print("Buy signal detected. Calculating position size...")
-            position_size = calculate_position_size(account_balance, risk_per_trade, stop_loss, current_price)
-            #place_order(api_key="your_api_key_here", ticker=best_asset, action="buy", quantity=position_size)
-            apply_stop_loss_take_profit(current_price, stop_loss, take_profit)
-            send_email("Trade Executed", f"Bought {position_size} of {best_asset} at {current_price}")
-        elif signal == -1:  # Sell signal
-            print("Sell signal detected. Executing sell order...")
-            #place_order(api_key="your_api_key_here", ticker=best_asset, action="sell", quantity=10)  # Example quantity
-            send_email("Trade Executed", f"Sold {best_asset} at {current_price}")
+        if signal == 'buy':
+            print("Buy signal detected (quick analysis). Calculating position size...")
+            current_price = intraday_prices[0]['close'] if intraday_prices else None
+            if current_price:
+                position_size = calculate_position_size(account_balance, risk_per_trade, stop_loss, current_price)
+                #place_order(api_key="your_api_key_here", ticker=best_asset, action="buy", quantity=position_size)
+                apply_stop_loss_take_profit(current_price, stop_loss, take_profit)
+                send_email("Trade Executed", f"Bought {position_size} of {best_asset} at {current_price}")
+        elif signal == 'sell':
+            print("Sell signal detected (quick analysis). Executing sell order...")
+            current_price = intraday_prices[0]['close'] if intraday_prices else None
+            if current_price:
+                #place_order(api_key="your_api_key_here", ticker=best_asset, action="sell", quantity=10)  # Example quantity
+                send_email("Trade Executed", f"Sold {best_asset} at {current_price}")
+        else:
+            print("Hold signal (quick analysis). No action taken.")
 
         print("Waiting for the next check...")
         time.sleep(300)  # Wait 5 minutes before the next check
@@ -145,8 +149,8 @@ def monitor_and_trade(account_balance, risk_per_trade):
 
 def balance_and_risk_management():
     """Check account balance and apply risk management."""
-    account_balance = 10000  # Example account balance in R$
-    risk_per_trade = 0.02  # Risk 2% of account balance per trade
+    account_balance = 300  # Example account balance in R$
+    risk_per_trade = 0.50  # Risk 2% of account balance per trade
 
     return account_balance, risk_per_trade
 
