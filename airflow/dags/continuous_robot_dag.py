@@ -15,7 +15,7 @@ continuous_dag = DAG(
     dag_id = 'continuous_robot',
     default_args=default_args,
     description='Run the robot logic frequently to check for trade signals',
-    schedule_interval='* 13-20 * * 1-5',  # Every minute, Mon-Fri, 13:00-20:59 UTC (market hours)
+    schedule='* 13-20 * * 1-5',  # Every minute, Mon-Fri, 13:00-20:59 UTC (market hours)
     start_date=datetime(2025, 5, 1),
     catchup=False,
 )
