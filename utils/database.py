@@ -177,6 +177,29 @@ def insert_intraday_prices(data):
     else:
         print(f"Failed to insert intraday price data for {ticker} on {date}")
 
+def insert_trade_asset(data):
+    """Insert trade asset data into the trade_asset table."""
+    ticker, type, price, volume = data
+    result = supabase.table("trade_asset").insert(
+        {"ticker": ticker, "type": type, "price": price, "volume": volume, "user_id": os.getenv("USER_ID")}).execute()
+    
+    if result:
+        print(f"Inserted trade asset data for {ticker} per {price}")
+    else:
+        print(f"Failed to insert trade asset data for {ticker} per {price}")
+
+def fetch_trade_asset(ticker):
+    """Fetch trade asset data for a given ticker from the database."""
+    data = supabase.table("trade_asset").select(
+        "id, ticker, type, price, volume"
+    ).eq("ticker", ticker).order("created_at", desc=True).execute()
+
+    if data.data:
+        return data.data
+    else:
+        print(f"Failed to fetch trade asset data for {ticker}")
+        return None
+
 def fetch_intraday_prices(ticker):
     """Fetch intraday prices for a given ticker from the database."""
     data = supabase.table("intraday_prices").select(

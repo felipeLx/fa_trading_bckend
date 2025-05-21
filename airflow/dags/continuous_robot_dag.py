@@ -14,17 +14,16 @@ default_args = {
 continuous_dag = DAG(
     dag_id = 'continuous_robot',
     default_args=default_args,
-    description='Keep the robot running continuously',
-    schedule='@hourly',
+    description='Run the robot logic frequently to check for trade signals',
+    schedule_interval='* 13-20 * * 1-5',  # Every minute, Mon-Fri, 13:00-20:59 UTC (market hours)
     start_date=datetime(2025, 5, 1),
     catchup=False,
 )
 
-globals()["continuous_dag"] = continuous_dag
-
-# Task to run robot.py
 run_robot = BashOperator(
     task_id='run_robot',
-    bash_command='python3 /mnt/c/Users/USUARIO/Desktop/workspace/invest_fal/robot.py',
+    bash_command='python3 /mnt/c/Users/USUARIO/Desktop/workspace/fa_trading_bckend/robot.py',
     dag=continuous_dag,
 )
+
+globals()["continuous_dag"] = continuous_dag

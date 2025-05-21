@@ -79,7 +79,7 @@ if __name__ == "__main__":
     tickers = [
         "PETR4", "VALE3", "ITUB4", "AMER3", "B3SA3", "MGLU3", "LREN3", "ITSA4", "BBAS3", "RENT3", "ABEV3", "SUZB3", "WEG3", "BRFS3", "BBDC4", "CRFB3", "BPAC11", "GGBR3", "EMBR3", "CMIN3", "ITSA4", "RDOR3", "RAIZ4", "PETZ3", "PSSA3", "VBBR3"
     ]
-    # Insert all tickers' prices into the table first
+    # Insert all tickers' prices into the table first (should be scheduled every 5 minutes in production)
     fetch_and_store_intraday_for_all(tickers, interval='5m', range_='1d')
     # Then, for each ticker, fetch from DB and print signal
     from utils.database import fetch_intraday_prices

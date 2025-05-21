@@ -52,12 +52,14 @@ def fetch_brapi_data(ticker, interval, range_):
         print(f"Error fetching data for {ticker}: {e}")
         return None
 
-def process_market_and_balance_sheet_data(data):
-    """Process market, balance sheet, and historical price data."""
+def process_market_and_balance_sheet_data(data, ticker=None):
+    """Process market, balance sheet, and historical price data. Only returns processed data, does not insert into database."""
     try:
         market_data = data['results'][0]  # Use the latest market data
-        balance_sheet_data = data['results'][0]['balanceSheetHistory'][0]  # Use the most recent balance sheet
-        historical_data = data['results'][0]['historicalDataPrice'][-26:]  # Use the last 5 days of historical data
+        balance_sheet_data = None
+        if 'balanceSheetHistory' in data['results'][0] and data['results'][0]['balanceSheetHistory']:
+            balance_sheet_data = data['results'][0]['balanceSheetHistory'][0]
+        historical_data = data['results'][0]['historicalDataPrice']
 
         # Extract relevant market data 
         market_info = {
@@ -70,13 +72,15 @@ def process_market_and_balance_sheet_data(data):
         }
 
         # Extract relevant balance sheet data
-        balance_sheet_info = {
-            'endDate': balance_sheet_data['endDate'],
-            'totalCurrentAssets': balance_sheet_data['totalCurrentAssets'],
-            'totalCurrentLiabilities': balance_sheet_data['totalCurrentLiabilities'],
-            'totalLiab': balance_sheet_data['totalLiab'],
-            'totalStockholderEquity': balance_sheet_data['totalStockholderEquity']
-        }
+        balance_sheet_info = None
+        if balance_sheet_data:
+            balance_sheet_info = {
+                'endDate': balance_sheet_data['endDate'],
+                'totalCurrentAssets': balance_sheet_data['totalCurrentAssets'],
+                'totalCurrentLiabilities': balance_sheet_data['totalCurrentLiabilities'],
+                'totalLiab': balance_sheet_data['totalLiab'],
+                'totalStockholderEquity': balance_sheet_data['totalStockholderEquity']
+            }
 
         # Extract relevant historical price data
         historical_prices = [
@@ -92,6 +96,21 @@ def process_market_and_balance_sheet_data(data):
             for hp in historical_data
         ]
 
+        # Map ticker if needed (e.g., '^BVSP' to 'IBOV')
+        mapped_ticker = 'IBOV' if ticker == '^BVSP' else ticker
+        for price in historical_prices:
+            save_historical_prices((
+                mapped_ticker,
+                price['date'],
+                price['open'],
+                price['high'],
+                price['low'],
+                price['close'],
+                price['volume'],
+                price['adjustedClose']
+            ))
+
+        # No database inserts here!
         return market_info, balance_sheet_info, historical_prices
     except KeyError as e:
         print(f"Missing key in data: {e}")
@@ -266,27 +285,32 @@ def calculate_beta_from_returns(asset_ticker, market_ticker, lookback_days=60):
     beta = reg.coef_[0]
     return beta
 
+def map_ticker_for_db(ticker):
+    """Map API tickers to database-friendly tickers."""
+    return 'IBOV' if ticker == '^BVSP' else ticker
+
 def run_technical_analysis():
-    tickers = ["IBOV","PETR4", "VALE3", "ITUB4", "AMER3", "B3SA3", "MGLU3", "LREN3", "ITSA4", "BBAS3", "RENT3", "ABEV3", "SUZB3", "WEG3", "BRFS3", "BBDC4", "CRFB3", "BPAC11", "GGBR3", "EMBR3", "CMIN3", "ITSA4", "RDOR3", "RAIZ4", "PETZ3", "PSSA3", "VBBR3"]
+    tickers = ["^BVSP","PETR4", "VALE3", "ITUB4", "AMER3", "B3SA3", "MGLU3", "LREN3", "ITSA4", "BBAS3", "RENT3", "ABEV3", "SUZB3", "WEG3", "BRFS3", "BBDC4", "CRFB3", "BPAC11", "GGBR3", "EMBR3", "CMIN3", "ITSA4", "RDOR3", "RAIZ4", "PETZ3", "PSSA3", "VBBR3"]
 
     all_features = []
     all_labels = []
 
     for ticker in tickers:
+        db_ticker = map_ticker_for_db(ticker)
         print(f"Fetching all BRAPI data for {ticker}...")
-        market_data = fetch_brapi_data(ticker, interval='1d', range_='1y')
+        market_data = fetch_brapi_data(ticker, interval='1d', range_='1m')
 
         if market_data:
             print(f"Processing data for {ticker}...")
-            market_info, balance_sheet_info, historical_prices = process_market_and_balance_sheet_data(market_data)
+            market_info, balance_sheet_info, historical_prices = process_market_and_balance_sheet_data(market_data, ticker)
 
             if market_info and balance_sheet_info and historical_prices:
                 print(f"Calculating financial ratios for {ticker}...")
                 financial_ratios = calculate_financial_ratios(balance_sheet_info)
 
-                print(f"Saving financial data for {ticker} to the database...")
+                print(f"Saving financial data for {db_ticker} to the database...")
                 save_balance_sheet_data((
-                    ticker,
+                    db_ticker,
                     balance_sheet_info['endDate'],
                     balance_sheet_info['totalCurrentAssets'],
                     balance_sheet_info['totalCurrentLiabilities'],
@@ -296,10 +320,10 @@ def run_technical_analysis():
                     financial_ratios.get('debt_to_equity_ratio')
                 ))
 
-                print(f"Saving historical prices for {ticker} to the database...")
+                print(f"Saving historical prices for {db_ticker} to the database...")
                 for price in historical_prices:
                     save_historical_prices((
-                        ticker,
+                        db_ticker,
                         price['date'],
                         price['open'],
                         price['high'],
@@ -309,7 +333,7 @@ def run_technical_analysis():
                         price['adjustedClose']
                     ))
 
-                print(f"Saving daily analysis for {ticker} to the database...")
+                print(f"Saving daily analysis for {db_ticker} to the database...")
                 close_prices = [p['close'] for p in historical_prices]
                 if not close_prices or any(c is None for c in close_prices):
                     print(f"Skipping {ticker}: insufficient close price data.")
@@ -337,20 +361,20 @@ def run_technical_analysis():
                         rsi,
                         macd,
                         signal_line,
-                        ticker
+                        db_ticker
                     ))
 
-                print(f"Saving yearly analysis for {ticker} to the database...")
+                print(f"Saving yearly analysis for {db_ticker} to the database...")
                 insert_yearly_analysis((
                     historical_prices[0]['date'],  # Most recent date
                     historical_prices[0]['close'],  # Most recent close price
-                    ticker,
+                    db_ticker,
                 ))
 
-                print(f"Analyzing asset for {ticker}...")
+                print(f"Analyzing asset for {db_ticker}...")
                 asset_analysis = analyze_asset(market_data['results'][0]['defaultKeyStatistics'], market_info['regularMarketPrice'])
                 insert_asset_analysis((
-                    ticker,
+                    db_ticker,
                     asset_analysis['forward_pe'],
                     asset_analysis['profit_margins'],
                     asset_analysis['beta'],
@@ -364,7 +388,7 @@ def run_technical_analysis():
                 all_labels.extend(labels)
 
                 if features and labels:
-                    tickers_with_data.append(ticker)
+                    tickers_with_data.append(db_ticker)
                     print(f"Tickers with data: {tickers_with_data}")
     print(f"Total features collected: {len(all_features)}")
     print(f"Total labels collected: {len(all_labels)}")
