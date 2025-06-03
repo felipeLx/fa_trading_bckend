@@ -38,23 +38,91 @@ def option_chains(ticker):
     return chains
 
 if __name__ == "__main__":
-    ticker = "ERJ"
+    import sys
+    
+    # Allow ticker to be passed as command line argument
+    ticker = sys.argv[1] if len(sys.argv) > 1 else "ERJ"
+    print(f"Analyzing options for ticker: {ticker}")
 
-    option_chains = option_chains(ticker)
-    calls = option_chains[option_chains['optionType'] == 'call']
+    try:
+        option_chains_data = option_chains(ticker)
+        calls = option_chains_data[option_chains_data['optionType'] == 'call']
 
-    # select expiration to plot
-    calls_at_expiry = calls[calls['expiration'] == '2025-05-02 23:59:59']
+        print(f"Total calls found: {len(calls)}")
+        
+        if len(calls) == 0:
+            print(f"No call options found for ticker {ticker}. Please check if it's a valid ticker with options.")
+            sys.exit(1)
+            
+        print(f"Available expirations in calls: {calls['expiration'].unique()}")
 
-    # filter out low vols
+        # Check if the specific expiration exists
+        target_expiration = '2025-05-02 23:59:59'
+        calls_at_expiry = calls[calls['expiration'] == target_expiration]
+        
+        print(f"Calls found for {target_expiration}: {len(calls_at_expiry)}")
+        
+        if len(calls_at_expiry) == 0:
+            print("No calls found for the specified expiration date.")
+            # Use the first available expiration instead
+            if len(calls) > 0:
+                first_expiration = calls['expiration'].iloc[0]
+                print(f"Using first available expiration: {first_expiration}")
+                calls_at_expiry = calls[calls['expiration'] == first_expiration]
+            else:
+                print("No calls data available at all!")
+                sys.exit(1)
+                
+    except Exception as e:
+        print(f"Error fetching options data for {ticker}: {e}")
+        print("This could be due to:")
+        print("1. Invalid ticker symbol")
+        print("2. No options available for this ticker")
+        print("3. Network connectivity issues")
+        sys.exit(1)# filter out low vols
     filtered_calls_at_expiry = calls_at_expiry[calls_at_expiry['impliedVolatility'] > 0.001]
-
-    filtered_calls_at_expiry[["strike", "impliedVolatility"]].set_index("strike").plot(title=f"IV for {ticker} at {calls_at_expiry['expiration'].iloc[0]}",
-        ylabel="Implied Volatility",
-        xlabel="Strike",
-        figsize=(10, 6),
-        grid=True,
-        style='o-',
-        legend=False
-    )
-    plt.show()
+    
+    print(f"Calls after filtering low volatility: {len(filtered_calls_at_expiry)}")
+    
+    if len(filtered_calls_at_expiry) == 0:
+        print("Still no data after relaxing filter. Showing all calls for this expiration:")
+        filtered_calls_at_expiry = calls_at_expiry
+        
+    if len(filtered_calls_at_expiry) > 0:
+        try:
+            expiration_str = filtered_calls_at_expiry['expiration'].iloc[0].strftime('%Y-%m-%d')
+            print(f"Plotting volatility data for {len(filtered_calls_at_expiry)} options")
+            
+            # Check if we have the required columns
+            if 'strike' in filtered_calls_at_expiry.columns and 'impliedVolatility' in filtered_calls_at_expiry.columns:
+                plot_data = filtered_calls_at_expiry[["strike", "impliedVolatility"]].copy()
+                
+                # Remove any NaN values
+                plot_data = plot_data.dropna()
+                
+                if len(plot_data) > 0:
+                    plot_data.set_index("strike").plot(
+                        title=f"IV for {ticker} at {expiration_str}",
+                        ylabel="Implied Volatility",
+                        xlabel="Strike",
+                        figsize=(10, 6),
+                        grid=True,
+                        style='o-',
+                        legend=False
+                    )
+                    plt.show()
+                else:
+                    print("No valid data points to plot after removing NaN values!")
+            else:
+                print("Required columns (strike, impliedVolatility) not found in data")
+                print(f"Available columns: {filtered_calls_at_expiry.columns.tolist()}")
+                
+        except Exception as e:
+            print(f"Error while plotting: {e}")
+            print("Available data:")
+            if len(filtered_calls_at_expiry) > 0:
+                print(filtered_calls_at_expiry.head())
+            else:
+                print("DataFrame is empty")
+    else:
+        print("No data to plot!")

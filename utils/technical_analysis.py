@@ -298,7 +298,7 @@ def run_technical_analysis():
     for ticker in tickers:
         db_ticker = map_ticker_for_db(ticker)
         print(f"Fetching all BRAPI data for {ticker}...")
-        market_data = fetch_brapi_data(ticker, interval='1d', range_='1m')
+        market_data = fetch_brapi_data(ticker, interval='1d', range_='1mo')
 
         if market_data:
             print(f"Processing data for {ticker}...")
