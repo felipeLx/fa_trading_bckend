@@ -1,0 +1,192 @@
+{
+  "scenarios": {
+    "Conservative": {
+      "PETR4": {
+        "error": "Length of values (198) does not match length of index (199)"
+      },
+      "VALE3": {
+        "error": "Length of values (196) does not match length of index (197)"
+      },
+      "ITUB4": {},
+      "AMER3": {
+        "error": "Length of values (163) does not match length of index (164)"
+      },
+      "B3SA3": {},
+      "MGLU3": {
+        "error": "Length of values (157) does not match length of index (158)"
+      },
+      "LREN3": {
+        "error": "Length of values (158) does not match length of index (159)"
+      },
+      "ITSA4": {},
+      "BBAS3": {},
+      "RENT3": {
+        "error": "Length of values (160) does not match length of index (161)"
+      },
+      "ABEV3": {
+        "error": "Length of values (154) does not match length of index (155)"
+      },
+      "SUZB3": {
+        "error": "Length of values (157) does not match length of index (158)"
+      },
+      "WEG3": {},
+      "BRFS3": {
+        "error": "Length of values (157) does not match length of index (158)"
+      },
+      "BBDC4": {},
+      "CRFB3": {
+        "error": "Length of values (154) does not match length of index (155)"
+      },
+      "BPAC11": {},
+      "GGBR3": {
+        "error": "Length of values (155) does not match length of index (156)"
+      },
+      "EMBR3": {
+        "error": "Length of values (76) does not match length of index (77)"
+      },
+      "CMIN3": {
+        "error": "Length of values (75) does not match length of index (76)"
+      }
+    },
+    "Moderate": {
+      "PETR4": {
+        "error": "Length of values (198) does not match length of index (199)"
+      },
+      "VALE3": {
+        "error": "Length of values (196) does not match length of index (197)"
+      },
+      "ITUB4": {},
+      "AMER3": {
+        "error": "Length of values (163) does not match length of index (164)"
+      },
+      "B3SA3": {},
+      "MGLU3": {
+        "error": "Length of values (157) does not match length of index (158)"
+      },
+      "LREN3": {
+        "error": "Length of values (158) does not match length of index (159)"
+      },
+      "ITSA4": {},
+      "BBAS3": {},
+      "RENT3": {
+        "error": "Length of values (160) does not match length of index (161)"
+      },
+      "ABEV3": {
+        "error": "Length of values (154) does not match length of index (155)"
+      },
+      "SUZB3": {
+        "error": "Length of values (157) does not match length of index (158)"
+      },
+      "WEG3": {},
+      "BRFS3": {
+        "error": "Length of values (157) does not match length of index (158)"
+      },
+      "BBDC4": {},
+      "CRFB3": {
+        "error": "Length of values (154) does not match length of index (155)"
+      },
+      "BPAC11": {},
+      "GGBR3": {
+        "error": "Length of values (155) does not match length of index (156)"
+      },
+      "EMBR3": {
+        "error": "Length of values (76) does not match length of index (77)"
+      },
+      "CMIN3": {
+        "error": "Length of values (75) does not match length of index (76)"
+      }
+    },
+    "Aggressive": {
+      "PETR4": {
+        "error": "Length of values (198) does not match length of index (199)"
+      },
+      "VALE3": {
+        "error": "Length of values (196) does not match length of index (197)"
+      },
+      "ITUB4": {},
+      "AMER3": {
+        "error": "Length of values (163) does not match length of index (164)"
+      },
+      "B3SA3": {},
+      "MGLU3": {
+        "error": "Length of values (157) does not match length of index (158)"
+      },
+      "LREN3": {
+        "error": "Length of values (158) does not match length of index (159)"
+      },
+      "ITSA4": {},
+      "BBAS3": {},
+      "RENT3": {
+        "error": "Length of values (160) does not match length of index (161)"
+      },
+      "ABEV3": {
+        "error": "Length of values (154) does not match length of index (155)"
+      },
+      "SUZB3": {
+        "error": "Length of values (157) does not match length of index (158)"
+      },
+      "WEG3": {},
+      "BRFS3": {
+        "error": "Length of values (157) does not match length of index (158)"
+      },
+      "BBDC4": {},
+      "CRFB3": {
+        "error": "Length of values (154) does not match length of index (155)"
+      },
+      "BPAC11": {},
+      "GGBR3": {
+        "error": "Length of values (155) does not match length of index (156)"
+      },
+      "EMBR3": {
+        "error": "Length of values (76) does not match length of index (77)"
+      },
+      "CMIN3": {
+        "error": "Length of values (75) does not match length of index (76)"
+      }
+    }
+  },
+  "summary": {},
+  "parameters": {
+    "tickers_tested": [
+      "PETR4",
+      "VALE3",
+      "ITUB4",
+      "AMER3",
+      "B3SA3",
+      "MGLU3",
+      "LREN3",
+      "ITSA4",
+      "BBAS3",
+      "RENT3",
+      "ABEV3",
+      "SUZB3",
+      "WEG3",
+      "BRFS3",
+      "BBDC4",
+      "CRFB3",
+      "BPAC11",
+      "GGBR3",
+      "EMBR3",
+      "CMIN3"
+    ],
+    "scenarios_tested": [
+      {
+        "initial_balance": 500,
+        "risk_per_trade": 0.01,
+        "name": "Conservative"
+      },
+      {
+        "initial_balance": 500,
+        "risk_per_trade": 0.02,
+        "name": "Moderate"
+      },
+      {
+        "initial_balance": 500,
+        "risk_per_trade": 0.05,
+        "name": "Aggressive"
+      }
+    ],
+    "start_date": "2024-12-06",
+    "end_date": "2025-06-04"
+  }
+}

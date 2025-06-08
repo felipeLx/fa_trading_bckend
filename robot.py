@@ -14,11 +14,22 @@ load_dotenv()
 
 STATE_FILE = 'robot_state.json'
 
+# DAY TRADING CONFIGURATION
+MARKET_OPEN_TIME = "09:00"  # 9:00 AM Brazil time
+MARKET_CLOSE_TIME = "17:30"  # 5:30 PM Brazil time
+FORCE_CLOSE_TIME = "17:00"  # Force close 30 minutes before market close
+MAX_DAILY_TRADES = 3  # Maximum trades per day (day trading limit)
+DAILY_LOSS_LIMIT = 0.05  # Stop trading if daily loss exceeds 5%
+
 def send_email(subject, body):
     """Send an email notification."""
-    sender_email = os.environ.get('GMAIL')  
-    sender_password = os.environ.get('PASS')
-    receiver_email = os.environ.get('GMAIL') 
+    sender_email = os.environ.get('GMAIL', '')  
+    sender_password = os.environ.get('PASS', '')
+    receiver_email = os.environ.get('GMAIL', '') 
+
+    if not sender_email or not sender_password:
+        print(f"Email notification: {subject} - {body}")
+        return
 
     msg = MIMEMultipart()
     msg['From'] = sender_email
@@ -36,30 +47,21 @@ def send_email(subject, body):
     except Exception as e:
         print(f"Failed to send email: {e}")
 
-def fetch_realtime_data(ticker):
-    """Fetch the most recent price and related info for a given ticker from the database (as a real-time proxy)."""
-    prices = fetch_historical_prices(ticker)
-    if not prices:
-        print(f"No historical price data found for {ticker}.")
-        return None
-    latest = prices[0]  # Most recent due to order(desc=True) in fetch_historical_prices
-    # Map to expected keys for trading logic
-    return {
-        'symbol': latest.get('ticker'),
-        'regularMarketPrice': latest.get('close'),
-        'regularMarketDayHigh': latest.get('high'),
-        'regularMarketDayLow': latest.get('low'),
-        'regularMarketOpen': latest.get('open'),
-        'regularMarketVolume': latest.get('volume'),
-        'date': latest.get('date'),
-        # Add more fields if needed for your logic
-    }
+# fetch_realtime_data() function removed - unused and redundant with database functions
 
 def load_state():
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, 'r') as f:
-                return json.load(f)
+                state = json.load(f)
+                
+                # Check if we need to reset for a new trading day
+                if should_reset_for_new_day(state):
+                    print("🔄 New trading day detected - resetting state for fresh analysis...")
+                    state = reset_state()
+                    save_state(state)
+                
+                return state
         except Exception as e:
             print(f"Failed to load state: {e}")
     return {
@@ -67,8 +69,56 @@ def load_state():
         'position_size': 0,
         'buy_price': None,
         'stop_loss': None,
-        'take_profit': None
+        'take_profit': None,
+        'last_analysis_date': None
     }
+
+def should_reset_for_new_day(state):
+    """Check if we should reset state for a new trading day"""
+    last_analysis = state.get('last_analysis_date')
+    if not last_analysis:
+        return True
+    
+    try:
+        last_date = datetime.strptime(last_analysis, '%Y-%m-%d')
+        today = datetime.now()
+        
+        # Reset if it's a new day and we're before market close (typically 6 PM Brazil time)
+        if last_date.date() < today.date():
+            return True
+            
+        # Also reset if more than 18 hours have passed (in case market closed)
+        hours_diff = (today - last_date).total_seconds() / 3600
+        if hours_diff > 18:
+            return True
+            
+    except (ValueError, TypeError):
+        return True
+    
+    return False
+
+def reset_state():
+    """Reset the trading state for a new day"""
+    today = datetime.now().strftime('%Y-%m-%d')
+    return {
+        'holding_asset': None,
+        'position_size': 0,
+        'buy_price': None,
+        'stop_loss': None,
+        'take_profit': None,
+        'last_analysis_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'trading_date': today,
+        'daily_trades_count': 0,
+        'daily_initial_balance': 500,
+        'account_balance': 500
+    }
+
+# force_reset_analysis() function removed - unused, functionality available via reset_robot_state.py
+
+def update_analysis_timestamp(state):
+    """Update the last analysis timestamp"""
+    state['last_analysis_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    return state
 
 def save_state(state):
     try:
@@ -170,9 +220,9 @@ def backtesting_loop(tickers_list=None, scenarios=None):
     # Default scenarios if not provided
     if not scenarios:
         scenarios = [
-            {"initial_balance": 1000, "risk_per_trade": 0.01, "name": "Conservative"},
-            {"initial_balance": 1000, "risk_per_trade": 0.02, "name": "Moderate"},
-            {"initial_balance": 1000, "risk_per_trade": 0.05, "name": "Aggressive"}
+            {"initial_balance": 500, "risk_per_trade": 0.01, "name": "Conservative"},
+            {"initial_balance": 500, "risk_per_trade": 0.02, "name": "Moderate"},
+            {"initial_balance": 500, "risk_per_trade": 0.05, "name": "Aggressive"}
         ]
     
     # Date range for testing (last 6 months)
@@ -290,14 +340,55 @@ def backtesting_loop(tickers_list=None, scenarios=None):
     return complete_results
 
 def monitor_and_trade(account_balance, risk_per_trade):
-    """Monitor and analyze the recommended asset, only selecting a new asset when not holding any. State is persisted across restarts and trades are logged to the trade_asset table."""
+    """Enhanced day trading monitor with end-of-day closure and daily limits."""
     from utils.database import fetch_intraday_prices, insert_trade_asset
     from utils.quick_technical_analysis import get_price_signals, fetch_and_store_intraday_for_all
+    
     state = load_state()
+    
+    # Initialize daily tracking if new day
+    today = datetime.now().strftime('%Y-%m-%d')
+    if state.get('trading_date') != today:
+        state['trading_date'] = today
+        state['daily_trades_count'] = 0
+        state['daily_initial_balance'] = account_balance
+        state['account_balance'] = account_balance
+        save_state(state)
+        print(f"🌅 New trading day started: {today}")
+    
     tickers = [
         "PETR4", "VALE3", "ITUB4", "AMER3", "B3SA3", "MGLU3", "LREN3", "ITSA4", "BBAS3", "RENT3", "ABEV3", "SUZB3", "WEG3", "BRFS3", "BBDC4", "CRFB3", "BPAC11", "GGBR3", "EMBR3", "CMIN3", "ITSA4", "RDOR3", "RAIZ4", "PETZ3", "PSSA3", "VBBR3"]
     
+    print("🤖 Starting Day Trading Robot - Enhanced Mode")
+    print(f"📊 Daily Limits: Max {MAX_DAILY_TRADES} trades, Max {DAILY_LOSS_LIMIT*100}% loss")
+    
     while True:
+        current_time = datetime.now().strftime("%H:%M")
+        
+        # 🚨 CRITICAL: Check if market is closed
+        if not is_market_hours():
+            print(f"🕐 Market closed ({current_time}). Day trading robot stopped.")
+            # Force close any remaining positions
+            force_close_all_positions(state, account_balance)
+            break
+        
+        # 🚨 CRITICAL: Force close positions near market close
+        if should_force_close_positions():
+            if force_close_all_positions(state, account_balance):
+                print("✅ All positions closed for day trading compliance.")
+            continue
+        
+        # Check daily limits
+        if get_daily_trades_count(state) >= MAX_DAILY_TRADES:
+            print(f"📈 Daily trade limit reached ({MAX_DAILY_TRADES}). No more trades today.")
+            time.sleep(300)
+            continue
+            
+        if is_daily_loss_limit_reached(state):
+            print(f"🛑 Daily loss limit reached ({DAILY_LOSS_LIMIT*100}%). Stopping trading.")
+            force_close_all_positions(state, account_balance)
+            break
+        
         holding_asset = state.get('holding_asset')
         position_size = state.get('position_size', 0)
         buy_price = state.get('buy_price')
@@ -305,87 +396,200 @@ def monitor_and_trade(account_balance, risk_per_trade):
         take_profit = state.get('take_profit')
 
         if holding_asset is None:
-            print("Running technical analysis to select best asset...")
+            print("🔍 Scanning for day trading opportunities...")
             run_technical_analysis()
-            print("Fetching and storing latest intraday (5m) data for all tickers...")
+            print("📡 Fetching latest intraday data...")
             fetch_and_store_intraday_for_all(tickers, interval='1d', range_='1mo')
-            print("Selecting best asset for trading...")
+            
+            print("🎯 Selecting best day trading asset...")
             best_asset = None
             best_score = float('-inf')
+            
             for ticker in tickers:
-                print(f"Analyzing data for {ticker}...")
+                print(f"📊 Analyzing {ticker}...")
                 daily_analysis = fetch_daily_analysis(ticker)
                 asset_analysis = fetch_asset_analysis(ticker)
                 historical_prices = fetch_historical_prices(ticker)
+                
                 if not daily_analysis or not asset_analysis or not historical_prices:
-                    print(f"Insufficient data for {ticker}. Skipping...")
+                    print(f"⚠️ Insufficient data for {ticker}. Skipping...")
                     continue
+                
                 rsi = next((row.get('rsi') for row in daily_analysis if row.get('rsi') is not None), None)
                 beta_raw = asset_analysis[0].get('beta')
+                
                 try:
-                    beta = float(beta_raw)
+                    beta = float(beta_raw) if beta_raw is not None else None
                 except (TypeError, ValueError):
-                    print(f"Invalid or missing beta for {ticker} (value: {beta_raw}). Attempting to calculate beta from returns...")
+                    print(f"⚠️ Invalid beta for {ticker}. Attempting calculation...")
                     from utils.technical_analysis import calculate_beta_from_returns
                     beta = calculate_beta_from_returns(ticker, "IBOV")
                     if beta is None:
-                        print(f"Could not calculate beta for {ticker}. Skipping...")
+                        print(f"❌ Could not calculate beta for {ticker}. Skipping...")
                         continue
+                        
                 if rsi is None or beta is None:
-                    print(f"Missing RSI or beta for {ticker}. Skipping...")
+                    print(f"❌ Missing RSI or beta for {ticker}. Skipping...")
                     continue
+                  # Day trading scoring with VOLUME ANALYSIS (prioritize volatility and momentum)
                 score = 0
-                if 30 <= rsi <= 70:
+                if 30 <= rsi <= 70:  # Avoid extreme conditions
                     score += 10
-                if beta < 1:
+                if 0.8 <= beta <= 1.5:  # Moderate volatility
+                    score += 15
+                if rsi < 40:  # Oversold potential
                     score += 5
-                print(f"Score for {ticker}: {score}")
+                if beta > 1.0:  # Higher volatility for day trading
+                    score += 10
+                
+                # ENHANCED: Add volume analysis for better day trading selection
+                if historical_prices and len(historical_prices) >= 20:
+                    from utils.technical_analysis import analyze_volume_profile
+                    
+                    # Extract price and volume data for analysis
+                    recent_prices = [p['close'] for p in historical_prices[-20:]]
+                    recent_volumes = [p['volume'] for p in historical_prices[-20:] if p.get('volume')]
+                    
+                    if recent_volumes and len(recent_volumes) >= 15:
+                        current_price = recent_prices[-1]
+                        volume_analysis = analyze_volume_profile(recent_prices, recent_volumes, current_price)
+                        
+                        # Volume-based scoring boost for day trading
+                        liquidity_score = volume_analysis.get("liquidity_score", 0)
+                        volume_trend = volume_analysis.get("volume_trend", "neutral")
+                        breakout_potential = volume_analysis.get("breakout_potential", False)
+                        volume_surge = volume_analysis.get("volume_surge", False)
+                        
+                        # Apply volume scoring
+                        if liquidity_score > 70:  # High liquidity - excellent for day trading
+                            score += 20
+                        elif liquidity_score > 50:  # Good liquidity
+                            score += 10
+                        elif liquidity_score < 30:  # Poor liquidity - risky for day trading
+                            score -= 15
+                        
+                        if volume_trend == "up":  # Volume supporting price action
+                            score += 10
+                        
+                        if breakout_potential:  # High breakout potential
+                            score += 15
+                        
+                        if volume_surge and rsi < 50:  # Volume surge with reasonable RSI
+                            score += 12
+                        
+                        print(f"📊 Volume Analysis - {ticker}: Liquidity: {liquidity_score}, Trend: {volume_trend}, Breakout: {breakout_potential}")
+                    else:
+                        print(f"⚠️ Limited volume data for {ticker} - using basic scoring")
+                    
+                    # Extract price and volume data for analysis
+                    recent_prices = [p['close'] for p in historical_prices[-20:]]
+                    recent_volumes = [p['volume'] for p in historical_prices[-20:] if p.get('volume')]
+                    
+                    if recent_volumes and len(recent_volumes) >= 15:
+                        current_price = recent_prices[-1]
+                        volume_analysis = analyze_volume_profile(recent_prices, recent_volumes, current_price)
+                        
+                        # Volume-based scoring boost for day trading
+                        liquidity_score = volume_analysis.get("liquidity_score", 0)
+                        volume_trend = volume_analysis.get("volume_trend", "neutral")
+                        breakout_potential = volume_analysis.get("breakout_potential", False)
+                        volume_surge = volume_analysis.get("volume_surge", False)
+                        
+                        # Apply volume scoring
+                        if liquidity_score > 70:  # High liquidity - excellent for day trading
+                            score += 20
+                        elif liquidity_score > 50:  # Good liquidity
+                            score += 10
+                        elif liquidity_score < 30:  # Poor liquidity - risky for day trading
+                            score -= 15
+                        
+                        if volume_trend == "up":  # Volume supporting price action
+                            score += 10
+                        
+                        if breakout_potential:  # High breakout potential
+                            score += 15
+                        
+                        if volume_surge and rsi < 50:  # Volume surge with reasonable RSI
+                            score += 12
+                        
+                        print(f"📊 Volume Analysis - {ticker}: Liquidity: {liquidity_score}, Trend: {volume_trend}, Breakout: {breakout_potential}")
+                    else:
+                        print(f"⚠️ Limited volume data for {ticker} - using basic scoring")
+                        
+                print(f"📈 Score for {ticker}: {score} (RSI: {rsi:.1f}, Beta: {beta:.2f})")
+                
                 if score > best_score:
                     best_score = score
                     best_asset = ticker
+                    
             if not best_asset:
-                print("No suitable asset found for trading today.")
-                print("Waiting 5 minutes before next attempt...")
+                print("❌ No suitable day trading asset found.")
+                print("⏳ Waiting 5 minutes before next scan...")
                 time.sleep(300)
                 continue
-            print(f"Best asset for trading: {best_asset}")
+                
+            print(f"🎯 Selected for day trading: {best_asset} (Score: {best_score})")
             historical_prices = fetch_historical_prices(best_asset)
             stop_loss, take_profit = calculate_stop_loss_take_profit_levels(historical_prices)
+            
             state['holding_asset'] = best_asset
             state['buy_price'] = None
             state['position_size'] = 0
             state['stop_loss'] = stop_loss
             state['take_profit'] = take_profit
+            
+            # Update analysis timestamp
+            state = update_analysis_timestamp(state)
             save_state(state)
+            
         else:
-            print(f"Monitoring {holding_asset} for trade signals...")
+            print(f"👀 Monitoring {holding_asset} for day trading signals...")
             intraday_prices = fetch_intraday_prices(holding_asset)
             signal, high, low = get_price_signals(intraday_prices)
-            print(f"Quick signal: {signal}, High: {high}, Low: {low}")
+            print(f"📊 Signal: {signal}, High: {high}, Low: {low}")
+            
             current_price = intraday_prices[0]['close'] if intraday_prices else None
+            
             if buy_price is None and signal == 'buy' and current_price:
-                print("Buy signal detected. Executing buy...")
+                print("🚀 BUY signal detected. Executing day trade...")
                 position_size = calculate_position_size(account_balance, risk_per_trade, stop_loss, current_price)
+                
                 state['buy_price'] = current_price
                 state['position_size'] = position_size
-                send_email("Trade Executed", f"Bought {position_size} of {holding_asset} at {current_price}")
-                # Log buy trade
+                state['daily_trades_count'] = get_daily_trades_count(state) + 1
+                
+                send_email("DAY TRADE - BUY", f"Bought {position_size} of {holding_asset} at {current_price}")
                 insert_trade_asset((holding_asset, 'buy', current_price, position_size))
                 save_state(state)
+                
             elif buy_price is not None and (signal == 'sell' or apply_stop_loss_take_profit(current_price, stop_loss, take_profit) == 'stop_loss'):
-                print("Sell signal or stop-loss detected. Executing sell...")
-                send_email("Trade Executed", f"Sold {holding_asset} at {current_price}")
-                # Log sell trade
+                print("💰 SELL signal or stop-loss detected. Closing day trade...")
+                
+                # Calculate P&L
+                pnl = (current_price - buy_price) * position_size
+                pnl_percent = ((current_price - buy_price) / buy_price) * 100
+                
+                send_email("DAY TRADE - SELL", f"Sold {holding_asset} at {current_price} (P&L: {pnl:.2f} R$ / {pnl_percent:.2f}%)")
                 insert_trade_asset((holding_asset, 'sell', current_price, position_size))
+                
+                # Update account balance
+                state['account_balance'] = state.get('account_balance', account_balance) + pnl
+                
+                # Clear position
                 state['holding_asset'] = None
                 state['buy_price'] = None
                 state['position_size'] = 0
                 state['stop_loss'] = None
                 state['take_profit'] = None
                 save_state(state)
+                
+                print(f"✅ Day trade completed. P&L: {pnl:.2f} R$ ({pnl_percent:.2f}%)")
+                
             else:
-                print("No action taken. Waiting for next check...")
-            time.sleep(300)
+                print("⏸️ No action taken. Monitoring continues...")
+                
+            time.sleep(300)  # 5-minute intervals for day trading
+            
         # Always save state at the end of each loop
         save_state(state)
     
@@ -421,9 +625,8 @@ def run_backtesting_menu():
         
         end_date = input("Enter end date (YYYY-MM-DD) or press Enter for default: ").strip()
         end_date = end_date if end_date else None
-        
         balance = input("Enter initial balance (or press Enter for $1000): ").strip()
-        balance = float(balance) if balance else 1000
+        balance = int(float(balance)) if balance else 1000
         
         risk = input("Enter risk per trade (0.01-0.1) or press Enter for 0.02: ").strip()
         risk = float(risk) if risk else 0.02
@@ -489,6 +692,86 @@ def run_backtesting_menu():
         print("Invalid choice. Please try again.")
     
     return True
+
+def is_market_hours():
+    """Check if current time is within market hours"""
+    now = datetime.now()
+    current_time = now.strftime("%H:%M")
+    
+    # Convert to comparable time format
+    market_open = datetime.strptime(MARKET_OPEN_TIME, "%H:%M").time()
+    market_close = datetime.strptime(MARKET_CLOSE_TIME, "%H:%M").time()
+    current_time_obj = datetime.strptime(current_time, "%H:%M").time()
+    
+    return market_open <= current_time_obj <= market_close
+
+def should_force_close_positions():
+    """Check if we should force close all positions (near market close)"""
+    now = datetime.now()
+    current_time = now.strftime("%H:%M")
+    force_close = datetime.strptime(FORCE_CLOSE_TIME, "%H:%M").time()
+    current_time_obj = datetime.strptime(current_time, "%H:%M").time()
+    
+    return current_time_obj >= force_close
+
+def get_daily_trades_count(state):
+    """Get number of trades executed today"""
+    return state.get('daily_trades_count', 0)
+
+def calculate_daily_pnl(state):
+    """Calculate today's profit/loss percentage"""
+    initial_balance = state.get('daily_initial_balance', state.get('account_balance', 1000))
+    current_balance = state.get('account_balance', initial_balance)
+    return (current_balance - initial_balance) / initial_balance
+
+def is_daily_loss_limit_reached(state):
+    """Check if daily loss limit has been reached"""
+    daily_pnl = calculate_daily_pnl(state)
+    return daily_pnl <= -DAILY_LOSS_LIMIT
+
+def force_close_all_positions(state, account_balance):
+    """Force close all open positions at market close"""
+    from utils.database import fetch_intraday_prices, insert_trade_asset
+    
+    holding_asset = state.get('holding_asset')
+    position_size = state.get('position_size', 0)
+    buy_price = state.get('buy_price')
+    
+    if holding_asset and position_size > 0 and buy_price:
+        print("🚨 FORCE CLOSING POSITION - MARKET CLOSE APPROACHING 🚨")
+        
+        # Get current price
+        intraday_prices = fetch_intraday_prices(holding_asset)
+        current_price = intraday_prices[0]['close'] if intraday_prices else buy_price
+        
+        # Calculate P&L
+        pnl = (current_price - buy_price) * position_size
+        pnl_percent = ((current_price - buy_price) / buy_price) * 100
+        
+        # Execute force sell
+        send_email("DAY TRADING - FORCE CLOSE", 
+                  f"Force closed {position_size} shares of {holding_asset} at {current_price} "
+                  f"(P&L: {pnl:.2f} R$ / {pnl_percent:.2f}%)")
+        
+        # Log trade
+        insert_trade_asset((holding_asset, 'force_close', current_price, position_size))
+        
+        # Update account balance
+        state['account_balance'] = state.get('account_balance', account_balance) + pnl
+        
+        # Clear position
+        state['holding_asset'] = None
+        state['buy_price'] = None
+        state['position_size'] = 0
+        state['stop_loss'] = None
+        state['take_profit'] = None
+        
+        print(f"✅ Position closed. P&L: {pnl:.2f} R$ ({pnl_percent:.2f}%)")
+        
+        save_state(state)
+        return True
+    
+    return False
 
 if __name__ == "__main__":
     print("="*60)

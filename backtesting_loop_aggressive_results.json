@@ -1,0 +1,48 @@
+{
+  "PETR4": {
+    "error": "Length of values (198) does not match length of index (199)"
+  },
+  "VALE3": {
+    "error": "Length of values (196) does not match length of index (197)"
+  },
+  "ITUB4": {},
+  "AMER3": {
+    "error": "Length of values (163) does not match length of index (164)"
+  },
+  "B3SA3": {},
+  "MGLU3": {
+    "error": "Length of values (157) does not match length of index (158)"
+  },
+  "LREN3": {
+    "error": "Length of values (158) does not match length of index (159)"
+  },
+  "ITSA4": {},
+  "BBAS3": {},
+  "RENT3": {
+    "error": "Length of values (160) does not match length of index (161)"
+  },
+  "ABEV3": {
+    "error": "Length of values (154) does not match length of index (155)"
+  },
+  "SUZB3": {
+    "error": "Length of values (157) does not match length of index (158)"
+  },
+  "WEG3": {},
+  "BRFS3": {
+    "error": "Length of values (157) does not match length of index (158)"
+  },
+  "BBDC4": {},
+  "CRFB3": {
+    "error": "Length of values (154) does not match length of index (155)"
+  },
+  "BPAC11": {},
+  "GGBR3": {
+    "error": "Length of values (155) does not match length of index (156)"
+  },
+  "EMBR3": {
+    "error": "Length of values (76) does not match length of index (77)"
+  },
+  "CMIN3": {
+    "error": "Length of values (75) does not match length of index (76)"
+  }
+}

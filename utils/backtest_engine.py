@@ -467,9 +467,9 @@ def run_comprehensive_backtest():
     
     # Test different parameters
     scenarios = [
-        {"initial_balance": 1000, "risk_per_trade": 0.01, "name": "Conservative"},
-        {"initial_balance": 1000, "risk_per_trade": 0.02, "name": "Moderate"},
-        {"initial_balance": 1000, "risk_per_trade": 0.05, "name": "Aggressive"}
+        {"initial_balance": 500, "risk_per_trade": 0.01, "name": "Conservative"},
+        {"initial_balance": 500, "risk_per_trade": 0.02, "name": "Moderate"},
+        {"initial_balance": 500, "risk_per_trade": 0.05, "name": "Aggressive"}
     ]
     
     # Date range for testing (last 6 months)
@@ -574,9 +574,9 @@ def backtesting_loop(tickers=None, scenarios=None):
         
     if scenarios is None:
         scenarios = [
-            {"initial_balance": 1000, "risk_per_trade": 0.01, "name": "Conservative"},
-            {"initial_balance": 1000, "risk_per_trade": 0.02, "name": "Moderate"},
-            {"initial_balance": 1000, "risk_per_trade": 0.05, "name": "Aggressive"}
+            {"initial_balance": 500, "risk_per_trade": 0.01, "name": "Conservative"},
+            {"initial_balance": 500, "risk_per_trade": 0.02, "name": "Moderate"},
+            {"initial_balance": 500, "risk_per_trade": 0.05, "name": "Aggressive"}
         ]
     
     all_results = {}

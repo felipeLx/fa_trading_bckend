@@ -12,6 +12,174 @@ import numpy as np
 
 load_dotenv()
 
+# ==========================================
+# VOLUME ANALYSIS FUNCTIONS FOR DAY TRADING
+# ==========================================
+
+def calculate_on_balance_volume(prices, volumes):
+    """Calculate On-Balance Volume (OBV) - Critical for day trading liquidity."""
+    if len(prices) < 2 or len(volumes) != len(prices):
+        return [0] * len(prices)
+    
+    obv = [volumes[0]]  # Start with first volume
+    
+    for i in range(1, len(prices)):
+        if prices[i] > prices[i-1]:  # Price up
+            obv.append(obv[-1] + volumes[i])
+        elif prices[i] < prices[i-1]:  # Price down
+            obv.append(obv[-1] - volumes[i])
+        else:  # Price unchanged
+            obv.append(obv[-1])
+    
+    return obv
+
+def calculate_volume_moving_average(volumes, window=20):
+    """Calculate Volume Moving Average for liquidity assessment."""
+    if len(volumes) < window:
+        return [np.mean(volumes)] * len(volumes)
+    
+    vma = []
+    for i in range(len(volumes)):
+        if i < window - 1:
+            vma.append(np.mean(volumes[:i+1]))
+        else:
+            vma.append(np.mean(volumes[i-window+1:i+1]))
+    
+    return vma
+
+def calculate_volume_rate_of_change(volumes, period=14):
+    """Calculate Volume Rate of Change (VROC) for momentum detection."""
+    if len(volumes) <= period:
+        return [0] * len(volumes)
+    
+    vroc = [0] * period
+    
+    for i in range(period, len(volumes)):
+        if volumes[i-period] != 0:
+            change = ((volumes[i] - volumes[i-period]) / volumes[i-period]) * 100
+            vroc.append(change)
+        else:
+            vroc.append(0)
+    
+    return vroc
+
+def calculate_volume_price_trend(prices, volumes):
+    """Calculate Volume Price Trend (VPT) indicator."""
+    if len(prices) < 2 or len(volumes) != len(prices):
+        return [0] * len(prices)
+    
+    vpt = [0]  # Start with 0
+    
+    for i in range(1, len(prices)):
+        if prices[i-1] != 0:
+            price_change = (prices[i] - prices[i-1]) / prices[i-1]
+            vpt.append(vpt[-1] + (volumes[i] * price_change))
+        else:
+            vpt.append(vpt[-1])
+    
+    return vpt
+
+def analyze_volume_profile(prices, volumes, current_price):
+    """Analyze volume profile for day trading insights."""
+    if not prices or not volumes or len(prices) != len(volumes):
+        return {"liquidity_score": 0, "volume_trend": "neutral", "breakout_potential": False}
+    
+    # Calculate indicators
+    obv = calculate_on_balance_volume(prices, volumes)
+    vma = calculate_volume_moving_average(volumes)
+    vroc = calculate_volume_rate_of_change(volumes)
+    vpt = calculate_volume_price_trend(prices, volumes)
+    
+    # Current metrics
+    current_volume = volumes[-1]
+    avg_volume = np.mean(volumes[-20:]) if len(volumes) >= 20 else np.mean(volumes)
+    volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
+    
+    # OBV trend (last 5 periods)
+    obv_trend = "up" if len(obv) >= 5 and obv[-1] > obv[-5] else "down"
+    
+    # Volume surge detection
+    volume_surge = volume_ratio > 1.5  # 50% above average
+    
+    # Liquidity score (0-100)
+    liquidity_score = min(100, (volume_ratio * 20) + (30 if volume_surge else 0) + (20 if obv_trend == "up" else 10))
+    
+    # Breakout potential
+    breakout_potential = volume_surge and obv_trend == "up" and len(vroc) > 0 and vroc[-1] > 10
+    
+    return {
+        "liquidity_score": round(liquidity_score, 2),
+        "volume_trend": obv_trend,
+        "volume_ratio": round(volume_ratio, 2),
+        "breakout_potential": breakout_potential,
+        "volume_surge": volume_surge,
+        "obv_current": obv[-1] if obv else 0,
+        "vpt_current": vpt[-1] if vpt else 0
+    }
+
+def enhanced_day_trading_signal(prices, volumes, rsi, macd, signal_line, ma_short, ma_long):
+    """Enhanced signal generation with volume analysis for day trading."""
+    if not prices or len(prices) < 2:
+        return "hold", 0
+    
+    current_price = prices[-1]
+    prev_price = prices[-2] if len(prices) > 1 else current_price
+    
+    # Volume analysis
+    volume_analysis = analyze_volume_profile(prices, volumes, current_price)
+    
+    # Signal strength (0-100)
+    signal_strength = 0
+    signal = "hold"
+    
+    # Price momentum signals
+    if rsi is not None and ma_short is not None and ma_long is not None:
+        # RSI signals
+        if 30 <= rsi <= 40:  # Oversold but not extreme
+            signal_strength += 20
+        elif rsi > 70:  # Overbought - potential sell
+            signal_strength -= 15
+        
+        # Moving average signals
+        if ma_short > ma_long and current_price > ma_short:  # Strong uptrend
+            signal_strength += 25
+        elif ma_short < ma_long:  # Downtrend
+            signal_strength -= 20
+    
+    # MACD signals
+    if macd is not None and signal_line is not None:
+        if macd > signal_line and macd > 0:  # Bullish momentum
+            signal_strength += 15
+        elif macd < signal_line:  # Bearish momentum
+            signal_strength -= 10
+    
+    # Volume confirmation (CRITICAL for day trading)
+    liquidity_score = volume_analysis["liquidity_score"]
+    volume_trend = volume_analysis["volume_trend"]
+    breakout_potential = volume_analysis["breakout_potential"]
+    
+    # Volume boost/penalty
+    if liquidity_score > 70:  # High liquidity
+        signal_strength += 20
+    elif liquidity_score < 30:  # Low liquidity - risky for day trading
+        signal_strength -= 30
+    
+    if volume_trend == "up" and current_price > prev_price:  # Volume confirms price
+        signal_strength += 15
+    
+    if breakout_potential:  # High breakout potential
+        signal_strength += 25
+    
+    # Final signal determination
+    if signal_strength >= 60:
+        signal = "buy"
+    elif signal_strength <= -30:
+        signal = "sell"
+    else:
+        signal = "hold"
+    
+    return signal, min(100, max(0, signal_strength))
+
 def calculate_moving_averages(data, short_window=20, long_window=50):
     """Calculate short and long moving averages."""
     data['Short_MA'] = data['Close'].rolling(window=short_window).mean()
@@ -200,16 +368,16 @@ def apply_stop_loss_take_profit(current_price, stop_loss, take_profit):
 def save_financial_data_to_db(ticker, balance_sheet_info, financial_ratios):
     """Save balance sheet data and financial ratios to the database."""
     try:
-        save_balance_sheet_data(
-            ticker=ticker,
-            end_date=balance_sheet_info['endDate'],
-            total_current_assets=balance_sheet_info['totalCurrentAssets'],
-            total_current_liabilities=balance_sheet_info['totalCurrentLiabilities'],
-            total_liabilities=balance_sheet_info['totalLiab'],
-            total_stockholder_equity=balance_sheet_info['totalStockholderEquity'],
-            current_ratio=financial_ratios.get('current_ratio'),
-            debt_to_equity_ratio=financial_ratios.get('debt_to_equity_ratio')
-        )
+        save_balance_sheet_data((
+            ticker,
+            balance_sheet_info['endDate'],
+            balance_sheet_info['totalCurrentAssets'],
+            balance_sheet_info['totalCurrentLiabilities'],
+            balance_sheet_info['totalLiab'],
+            balance_sheet_info['totalStockholderEquity'],
+            financial_ratios.get('current_ratio'),
+            financial_ratios.get('debt_to_equity_ratio')
+        ))
         print(f"Saved financial data for {ticker} to the database.")
     except Exception as e:
         print(f"Failed to save financial data for {ticker}: {e}")
@@ -276,11 +444,9 @@ def calculate_beta_from_returns(asset_ticker, market_ticker, lookback_days=60):
     merged = merged.dropna(subset=['asset_return', 'market_return'])
     if len(merged) < 2:
         print("Not enough return data to calculate beta.")
-        return None
-
-    # Linear regression: asset_return = alpha + beta * market_return
-    X = merged['market_return'].values.reshape(-1, 1)
-    y = merged['asset_return'].values
+        return None    # Linear regression: asset_return = alpha + beta * market_return
+    X = np.array(merged['market_return']).reshape(-1, 1)
+    y = np.array(merged['asset_return'])
     reg = LinearRegression().fit(X, y)
     beta = reg.coef_[0]
     return beta
