@@ -23,8 +23,8 @@ class CedroTechAPI:
             password (str): Trading account password (default from env)
             paper_trading (bool): If True, simulate orders without real execution
         """        
-        self.username = username or os.getenv('CEDROTECH_USERNAME', 'btg8778731')
-        self.password = password or os.getenv('CEDROTECH_PASSWORD', '867790')
+        self.username = username or os.getenv('CEDROTECH_USERNAME')
+        self.password = password or os.getenv('CEDROTECH_PASSWORD')
         self.paper_trading = paper_trading
         self.session_token = None
         self.user_identifier = None

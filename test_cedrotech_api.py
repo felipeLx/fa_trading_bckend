@@ -16,8 +16,8 @@ def test_cedrotech_api():
 
     # Show current configuration
     print("🔧 Current Configuration:")
-    print(f"   Username: {os.getenv('CEDROTECH_USERNAME', '8778731')}")
-    print(f"   Password: {'*' * len(os.getenv('CEDROTECH_PASSWORD', 'CsxjIQ06@*'))}")
+    print(f"   Username: {os.getenv('CEDROTECH_USERNAME')}")
+    print(f"   Password: {'*' * len(os.getenv('CEDROTECH_PASSWORD'))}")
     print(f"   Base URL: https://webfeeder.cedrotech.com")
     print()
 
