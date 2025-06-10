@@ -8,6 +8,9 @@ import requests
 import json
 from typing import Dict, List, Optional
 import time
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 class CedroTechOptionsDiscovery:
     """Automated options discovery and analysis system"""
@@ -282,8 +285,8 @@ class CedroTechOptionsDiscovery:
 def main():
     """Main function to run automated options discovery"""
     # Platform credentials that work
-    username = "btg8778731"
-    password = "867790"
+    username = os.getenv("CEDROTECH_PLATFORM", "")
+    password = os.getenv("CEDROTECH_PLAT_PASSWORD", "")
     
     # Companies to analyze
     companies = ["VALE", "PETROBRAS", "BRADESCO", "ITAU", "AMBEV"]

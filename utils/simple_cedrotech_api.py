@@ -23,7 +23,7 @@ class SimpleCedroTechAPI:
             username (str): Trading account username
             paper_trading (bool): If True, simulate orders without real execution
         """
-        self.username = username or os.getenv('CEDROTECH_USERNAME', '8778731')
+        self.username = username or os.getenv('CEDROTECH_USERNAME', '')
         self.paper_trading = paper_trading
         self.base_url = "https://webfeeder.cedrotech.com"
         

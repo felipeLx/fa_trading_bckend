@@ -7,13 +7,16 @@ Proper implementation with session-based authentication for market data access
 import requests
 import json
 from datetime import datetime
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 class CedroTechMarketData:
     """
     CedroTech Market Data API Client with proper authentication
     """
     
-    def __init__(self, platform_user="btg8778731", platform_password="867790"):
+    def __init__(self, platform_user=os.getenv('CEDROTECH_PLATAFORM'), platform_password=os.getenv('CEDROTECH_PLAT_PASSWORD')):
         """
         Initialize market data client with platform credentials
         

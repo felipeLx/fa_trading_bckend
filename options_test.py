@@ -6,6 +6,9 @@ Testing CedroTech options API with proper session authentication
 
 import requests
 import json
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 def test_options_with_auth():
     """Test options endpoint with proper authentication"""
@@ -13,8 +16,8 @@ def test_options_with_auth():
     print("=" * 60)
     
     # Trading credentials for options access
-    trading_user = "btg8778731"
-    trading_password = "867790"
+    trading_user = os.getenv('CEDROTECH_PLATAFORM','')
+    trading_password = os.getenv('CEDROTECH_PLAT_PASSWORD','')
     base_url = "https://webfeeder.cedrotech.com"
     
     # Create session for authentication

@@ -7,6 +7,9 @@ Using platform credentials to access market data API
 import requests
 import json
 from datetime import datetime
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 def test_market_data_authentication():
     """
@@ -17,8 +20,8 @@ def test_market_data_authentication():
     print("=" * 60)
     
     # Platform credentials
-    platform_user = "btg8778731"
-    platform_password = "867790"
+    platform_user = os.getenv('CEDROTECH_PLATAFORM','')
+    platform_password = os.getenv('CEDROTECH_PLAT_PASSWORD', '')
     
     print(f"👤 Platform User: {platform_user}")
     print(f"🔑 Password: {'*' * len(platform_password)}")

@@ -9,6 +9,9 @@ import requests
 import json
 from datetime import datetime, timedelta
 import pandas as pd
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 class CedroTechOptionsAPI:
     """
@@ -16,7 +19,7 @@ class CedroTechOptionsAPI:
     Integrates with your existing trading robot for options-based strategies
     """
     
-    def __init__(self, platform_user="btg8778731", platform_password="867790"):
+    def __init__(self, platform_user=os.getenv('CEDROTECH_PLATAFORM'), platform_password=os.getenv('CEDROTECH_PLAT_PASSWORD')):
         """
         Initialize options API client with platform credentials
         

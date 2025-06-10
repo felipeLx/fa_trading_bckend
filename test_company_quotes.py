@@ -6,6 +6,9 @@ Testing CedroTech company quotes API to get assets by company including options
 
 import requests
 import json
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 def test_company_quotes():
     """Test company quotes endpoint with different asset types"""
@@ -13,8 +16,8 @@ def test_company_quotes():
     print("🏢 CedroTech Company Quotes Test")
     print("=" * 60)
       # Trading credentials
-    trading_user = "btg8778731"
-    trading_password = "867790"
+    trading_user = os.getenv('CEDROTECH_PLATAFORM', '')
+    trading_password = os.getenv('CEDROTECH_PLAT_PASSWORD', '')
     base_url = "https://webfeeder.cedrotech.com"
     
     # Create session for authentication

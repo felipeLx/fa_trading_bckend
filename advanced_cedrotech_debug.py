@@ -18,8 +18,8 @@ def test_advanced_auth():
     print()
     
     base_url = "https://webfeeder.cedrotech.com"
-    username = "8778731"
-    password = os.getenv('CEDROTECH_PASSWORD', 'CsxjIQ06@*')
+    username = os.getenv('CEDROTECH_USERNAME') 
+    password = os.getenv('CEDROTECH_PASSWORD')
     
     # Test 1: Check if we need to maintain session cookies
     print("🧪 TEST 1: Authentication with session management")

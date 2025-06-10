@@ -26,8 +26,8 @@ class CedroTechAPICorrect:
             password (str): Trading account password  
             paper_trading (bool): If True, simulate orders without real execution
         """
-        self.username = username or os.getenv('CEDROTECH_USERNAME', '8778731')
-        self.password = password or os.getenv('CEDROTECH_PASSWORD')
+        self.username = username or os.getenv('CEDROTECH_USERNAME', '')
+        self.password = password or os.getenv('CEDROTECH_PASSWORD', '')
         self.paper_trading = paper_trading
         self.base_url = "https://webfeeder.cedrotech.com"
         self.user_identifier_header = None

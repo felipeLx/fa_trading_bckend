@@ -17,9 +17,8 @@ def test_simple_auth():
     print("="*60)
     print()
     
-    # Test data from your working example
-    username = "8778731"  # Your working example
-    password = os.getenv('CEDROTECH_PASSWORD', '867790')  # Default from conversation
+    username = os.getenv('CEDROTECH_USERNAME', '')
+    password = os.getenv('CEDROTECH_PASSWORD', '') 
     base_url = "https://webfeeder.cedrotech.com"
     
     print(f"🔧 Testing with:")
@@ -112,8 +111,8 @@ def test_simple_auth():
     print("-" * 40)
     
     test_credentials = [
-        ("8778731", password),  # Original
-        ("btg8778731", password),  # Platform format
+        (password),  
+        (password),  
         (f"btg{username}", password),  # Combined format
     ]
     
