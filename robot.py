@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from utils.strategy import calculate_moving_averages, calculate_rsi, calculate_macd, generate_signals
 from utils.database import fetch_daily_analysis, fetch_asset_analysis, fetch_historical_prices
 from utils.technical_analysis import run_technical_analysis, calculate_stop_loss_take_profit_levels, calculate_position_size, apply_stop_loss_take_profit
+from utils.cedrotech_api_correct import CedroTechAPICorrect
+from utils.balance_manager import BalanceManager
 import json
 from datetime import datetime, timedelta
 
@@ -20,6 +22,17 @@ MARKET_CLOSE_TIME = "17:30"  # 5:30 PM Brazil time
 FORCE_CLOSE_TIME = "17:00"  # Force close 30 minutes before market close
 MAX_DAILY_TRADES = 3  # Maximum trades per day (day trading limit)
 DAILY_LOSS_LIMIT = 0.05  # Stop trading if daily loss exceeds 5%
+
+def initialize_trading_api(paper_trading=True):
+    """Initialize CedroTech API for live trading"""
+    try:
+        api = CedroTechAPICorrect(paper_trading=paper_trading)
+        print(f"✅ CedroTech API initialized successfully")
+        print(f"   Mode: {'PAPER TRADING' if paper_trading else 'LIVE TRADING'}")
+        return api
+    except Exception as e:
+        print(f"❌ Failed to initialize CedroTech API: {e}")
+        return None
 
 def send_email(subject, body):
     """Send an email notification."""
@@ -100,6 +113,12 @@ def should_reset_for_new_day(state):
 def reset_state():
     """Reset the trading state for a new day"""
     today = datetime.now().strftime('%Y-%m-%d')
+    
+    # Initialize balance manager to get current balance
+    balance_manager = BalanceManager()
+    balance_info = balance_manager.get_current_balance()
+    current_balance = balance_info['balance']
+    
     return {
         'holding_asset': None,
         'position_size': 0,
@@ -109,8 +128,8 @@ def reset_state():
         'last_analysis_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'trading_date': today,
         'daily_trades_count': 0,
-        'daily_initial_balance': 500,
-        'account_balance': 500
+        'daily_initial_balance': current_balance,
+        'account_balance': current_balance
     }
 
 # force_reset_analysis() function removed - unused, functionality available via reset_robot_state.py
@@ -127,7 +146,7 @@ def save_state(state):
     except Exception as e:
         print(f"Failed to save state: {e}")
 
-def backtest_strategy(ticker=None, start_date=None, end_date=None, initial_balance=1000, risk_per_trade=0.02):
+def backtest_strategy(ticker=None, start_date=None, end_date=None, initial_balance=500, risk_per_trade=0.02):
     """
     Backtest the trading strategy for a specific ticker or all tickers.
     
@@ -221,8 +240,8 @@ def backtesting_loop(tickers_list=None, scenarios=None):
     if not scenarios:
         scenarios = [
             {"initial_balance": 500, "risk_per_trade": 0.01, "name": "Conservative"},
-            {"initial_balance": 500, "risk_per_trade": 0.02, "name": "Moderate"},
-            {"initial_balance": 500, "risk_per_trade": 0.05, "name": "Aggressive"}
+            {"initial_balance": 500, "risk_per_trade": 0.20, "name": "Moderate"},
+            {"initial_balance": 500, "risk_per_trade": 0.50, "name": "Aggressive"}
         ]
     
     # Date range for testing (last 6 months)
@@ -339,46 +358,59 @@ def backtesting_loop(tickers_list=None, scenarios=None):
     
     return complete_results
 
-def monitor_and_trade(account_balance, risk_per_trade):
+def monitor_and_trade(account_balance, risk_per_trade, paper_trading=True):
     """Enhanced day trading monitor with end-of-day closure and daily limits."""
     from utils.database import fetch_intraday_prices, insert_trade_asset
     from utils.quick_technical_analysis import get_price_signals, fetch_and_store_intraday_for_all
+    
+    # Initialize CedroTech API
+    api = initialize_trading_api(paper_trading=paper_trading)
+    if not api:
+        print("❌ Cannot start trading without API connection")
+        return
+    
+    # Initialize Balance Manager for dynamic balance tracking
+    balance_manager = BalanceManager(api=api)
     
     state = load_state()
     
     # Initialize daily tracking if new day
     today = datetime.now().strftime('%Y-%m-%d')
     if state.get('trading_date') != today:
+        # Get current balance for new trading day
+        balance_info = balance_manager.get_current_balance()
+        current_balance = balance_info['balance']
+        
         state['trading_date'] = today
         state['daily_trades_count'] = 0
-        state['daily_initial_balance'] = account_balance
-        state['account_balance'] = account_balance
+        state['daily_initial_balance'] = current_balance
+        state['account_balance'] = current_balance
         save_state(state)
         print(f"🌅 New trading day started: {today}")
+        print(f"💰 Starting balance: R${current_balance:.2f} (Source: {balance_info['source']})")
     
     tickers = [
         "PETR4", "VALE3", "ITUB4", "AMER3", "B3SA3", "MGLU3", "LREN3", "ITSA4", "BBAS3", "RENT3", "ABEV3", "SUZB3", "WEG3", "BRFS3", "BBDC4", "CRFB3", "BPAC11", "GGBR3", "EMBR3", "CMIN3", "ITSA4", "RDOR3", "RAIZ4", "PETZ3", "PSSA3", "VBBR3"]
     
     print("🤖 Starting Day Trading Robot - Enhanced Mode")
     print(f"📊 Daily Limits: Max {MAX_DAILY_TRADES} trades, Max {DAILY_LOSS_LIMIT*100}% loss")
+    print(f"🔗 Trading API: {'PAPER MODE' if paper_trading else 'LIVE MODE'}")
     
     while True:
         current_time = datetime.now().strftime("%H:%M")
-        
-        # 🚨 CRITICAL: Check if market is closed
+          # 🚨 CRITICAL: Check if market is closed
         if not is_market_hours():
             print(f"🕐 Market closed ({current_time}). Day trading robot stopped.")
             # Force close any remaining positions
-            force_close_all_positions(state, account_balance)
+            force_close_all_positions(state, account_balance, api, balance_manager)
             break
         
         # 🚨 CRITICAL: Force close positions near market close
         if should_force_close_positions():
-            if force_close_all_positions(state, account_balance):
+            if force_close_all_positions(state, account_balance, api, balance_manager):
                 print("✅ All positions closed for day trading compliance.")
             continue
-        
-        # Check daily limits
+          # Check daily limits
         if get_daily_trades_count(state) >= MAX_DAILY_TRADES:
             print(f"📈 Daily trade limit reached ({MAX_DAILY_TRADES}). No more trades today.")
             time.sleep(300)
@@ -386,7 +418,7 @@ def monitor_and_trade(account_balance, risk_per_trade):
             
         if is_daily_loss_limit_reached(state):
             print(f"🛑 Daily loss limit reached ({DAILY_LOSS_LIMIT*100}%). Stopping trading.")
-            force_close_all_positions(state, account_balance)
+            force_close_all_positions(state, account_balance, api, balance_manager)
             break
         
         holding_asset = state.get('holding_asset')
@@ -537,8 +569,7 @@ def monitor_and_trade(account_balance, risk_per_trade):
             state['position_size'] = 0
             state['stop_loss'] = stop_loss
             state['take_profit'] = take_profit
-            
-            # Update analysis timestamp
+              # Update analysis timestamp
             state = update_analysis_timestamp(state)
             save_state(state)
             
@@ -549,42 +580,107 @@ def monitor_and_trade(account_balance, risk_per_trade):
             print(f"📊 Signal: {signal}, High: {high}, Low: {low}")
             
             current_price = intraday_prices[0]['close'] if intraday_prices else None
-            
             if buy_price is None and signal == 'buy' and current_price:
                 print("🚀 BUY signal detected. Executing day trade...")
-                position_size = calculate_position_size(account_balance, risk_per_trade, stop_loss, current_price)
                 
-                state['buy_price'] = current_price
-                state['position_size'] = position_size
-                state['daily_trades_count'] = get_daily_trades_count(state) + 1
+                # Use BalanceManager for dynamic position sizing
+                stop_loss_distance = abs(current_price - stop_loss)
+                position_result = balance_manager.calculate_position_size_with_current_balance(
+                    risk_per_trade, stop_loss_distance
+                )
                 
-                send_email("DAY TRADE - BUY", f"Bought {position_size} of {holding_asset} at {current_price}")
-                insert_trade_asset((holding_asset, 'buy', current_price, position_size))
-                save_state(state)
+                if not position_result['success']:
+                    print(f"❌ Position sizing failed: {position_result['error']}")
+                    continue
+                
+                position_size = position_result['position_size']
+                
+                # Validate trade affordability
+                affordability_check = balance_manager.validate_trade_affordability(
+                    holding_asset, position_size, current_price
+                )
+                if not affordability_check['affordable']:
+                    print(f"❌ Insufficient balance for trade: {affordability_check['message']}")
+                    continue
+                
+                # Execute API buy order
+                print(f"📤 Executing BUY order via CedroTech API...")
+                order_result = api.place_buy_order(
+                    ticker=holding_asset,
+                    quantity=int(position_size),
+                    order_type="MARKET"
+                )
+                
+                if order_result.get('success'):
+                    print(f"✅ Buy order executed: {order_result.get('order_id')}")
+                    
+                    # Update balance after successful buy order
+                    balance_manager.update_balance_after_trade(
+                        trade_type='buy',
+                        ticker=holding_asset,
+                        price=current_price,
+                        volume=position_size
+                    )
+                    
+                    state['buy_price'] = current_price
+                    state['position_size'] = position_size
+                    state['daily_trades_count'] = get_daily_trades_count(state) + 1
+                    
+                    # Update state with current balance
+                    current_balance_info = balance_manager.get_current_balance()
+                    state['account_balance'] = current_balance_info['balance']
+                    
+                    send_email("DAY TRADE - BUY", f"Bought {position_size} of {holding_asset} at {current_price}")
+                    insert_trade_asset((holding_asset, 'buy', current_price, position_size))
+                    save_state(state)
+                else:
+                    print(f"❌ Buy order failed: {order_result.get('error')}")
                 
             elif buy_price is not None and (signal == 'sell' or apply_stop_loss_take_profit(current_price, stop_loss, take_profit) == 'stop_loss'):
                 print("💰 SELL signal or stop-loss detected. Closing day trade...")
+                  # Execute API sell order
+                print(f"📤 Executing SELL order via CedroTech API...")
+                order_result = api.place_sell_order(
+                    ticker=holding_asset,
+                    quantity=int(position_size),
+                    order_type="MARKET"
+                )
                 
-                # Calculate P&L
-                pnl = (current_price - buy_price) * position_size
-                pnl_percent = ((current_price - buy_price) / buy_price) * 100
-                
-                send_email("DAY TRADE - SELL", f"Sold {holding_asset} at {current_price} (P&L: {pnl:.2f} R$ / {pnl_percent:.2f}%)")
-                insert_trade_asset((holding_asset, 'sell', current_price, position_size))
-                
-                # Update account balance
-                state['account_balance'] = state.get('account_balance', account_balance) + pnl
-                
-                # Clear position
-                state['holding_asset'] = None
-                state['buy_price'] = None
-                state['position_size'] = 0
-                state['stop_loss'] = None
-                state['take_profit'] = None
-                save_state(state)
-                
-                print(f"✅ Day trade completed. P&L: {pnl:.2f} R$ ({pnl_percent:.2f}%)")
-                
+                if order_result.get('success'):
+                    print(f"✅ Sell order executed: {order_result.get('order_id')}")
+                    
+                    # Update balance after successful sell order
+                    balance_manager.update_balance_after_trade(
+                        trade_type='sell',
+                        ticker=holding_asset,
+                        price=current_price,
+                        volume=position_size
+                    )
+                    
+                    # Calculate P&L
+                    pnl = (current_price - buy_price) * position_size
+                    pnl_percent = ((current_price - buy_price) / buy_price) * 100
+                    
+                    send_email("DAY TRADE - SELL", f"Sold {holding_asset} at {current_price} (P&L: {pnl:.2f} R$ / {pnl_percent:.2f}%)")
+                    insert_trade_asset((holding_asset, 'sell', current_price, position_size))
+                    
+                    # Update state with current balance from BalanceManager
+                    current_balance_info = balance_manager.get_current_balance()
+                    state['account_balance'] = current_balance_info['balance']
+                    
+                    # Clear position
+                    state['holding_asset'] = None
+                    state['buy_price'] = None
+                    state['position_size'] = 0
+                    state['stop_loss'] = None
+                    state['take_profit'] = None
+                    save_state(state)
+                    
+                    print(f"✅ Day trade completed. P&L: {pnl:.2f} R$ ({pnl_percent:.2f}%)")
+                    print(f"💰 Updated Balance: R${current_balance_info['balance']:.2f}")
+                else:
+                    print(f"❌ Sell order failed: {order_result.get('error')}")
+                    
             else:
                 print("⏸️ No action taken. Monitoring continues...")
                 
@@ -595,10 +691,15 @@ def monitor_and_trade(account_balance, risk_per_trade):
     
 
 def balance_and_risk_management():
-    """Check account balance and apply risk management."""
-    account_balance = 300  # Example account balance in R$
-    risk_per_trade = 0.50  # Risk 2% of account balance per trade
-
+    """Get current account balance and apply dynamic risk management."""
+    balance_manager = BalanceManager()
+    balance_info = balance_manager.get_current_balance()
+    account_balance = balance_info['balance']
+    risk_per_trade = 0.02  # Risk 2% of current account balance per trade
+    
+    print(f"💰 Current Account Balance: R${account_balance:.2f} (Source: {balance_info['source']})")
+    print(f"⚠️ Risk per Trade: {risk_per_trade*100}% = R${account_balance * risk_per_trade:.2f}")
+    
     return account_balance, risk_per_trade
 
 def run_backtesting_menu():
@@ -625,8 +726,8 @@ def run_backtesting_menu():
         
         end_date = input("Enter end date (YYYY-MM-DD) or press Enter for default: ").strip()
         end_date = end_date if end_date else None
-        balance = input("Enter initial balance (or press Enter for $1000): ").strip()
-        balance = int(float(balance)) if balance else 1000
+        balance = input("Enter initial balance (or press Enter for $500): ").strip()
+        balance = int(float(balance)) if balance else 500
         
         risk = input("Enter risk per trade (0.01-0.1) or press Enter for 0.02: ").strip()
         risk = float(risk) if risk else 0.02
@@ -652,7 +753,7 @@ def run_backtesting_menu():
         
         if ticker:
             print(f"\nRunning quick backtest for {ticker}...")
-            results = backtest_strategy(ticker, initial_balance=1000, risk_per_trade=0.02)
+            results = backtest_strategy(ticker, initial_balance=500, risk_per_trade=0.02)
             print(f"\nQuick test completed for {ticker}!")
         
     elif choice == '4':
@@ -665,8 +766,8 @@ def run_backtesting_menu():
         else:
             tickers_list = None
             
-        balance = input("Enter initial balance (default 1000): ").strip()
-        balance = float(balance) if balance else 1000
+        balance = input("Enter initial balance (default 500): ").strip()
+        balance = float(balance) if balance else 500
         
         risk_low = input("Enter conservative risk (default 0.01): ").strip()
         risk_low = float(risk_low) if risk_low else 0.01
@@ -720,7 +821,7 @@ def get_daily_trades_count(state):
 
 def calculate_daily_pnl(state):
     """Calculate today's profit/loss percentage"""
-    initial_balance = state.get('daily_initial_balance', state.get('account_balance', 1000))
+    initial_balance = state.get('daily_initial_balance', state.get('account_balance', 500))
     current_balance = state.get('account_balance', initial_balance)
     return (current_balance - initial_balance) / initial_balance
 
@@ -729,7 +830,7 @@ def is_daily_loss_limit_reached(state):
     daily_pnl = calculate_daily_pnl(state)
     return daily_pnl <= -DAILY_LOSS_LIMIT
 
-def force_close_all_positions(state, account_balance):
+def force_close_all_positions(state, account_balance, api=None, balance_manager=None):
     """Force close all open positions at market close"""
     from utils.database import fetch_intraday_prices, insert_trade_asset
     
@@ -744,6 +845,29 @@ def force_close_all_positions(state, account_balance):
         intraday_prices = fetch_intraday_prices(holding_asset)
         current_price = intraday_prices[0]['close'] if intraday_prices else buy_price
         
+        # Execute API sell order if available
+        if api:
+            print(f"📤 Executing FORCE SELL order via CedroTech API...")
+            order_result = api.place_sell_order(
+                ticker=holding_asset,
+                quantity=int(position_size),
+                order_type="MARKET"
+            )
+            
+            if order_result.get('success'):
+                print(f"✅ Force sell order executed: {order_result.get('order_id')}")
+            else:
+                print(f"❌ Force sell order failed: {order_result.get('error')}")
+        
+        # Update balance after successful force sell order
+        if balance_manager:
+            balance_manager.update_balance_after_trade(
+                trade_type='force_close',
+                ticker=holding_asset,
+                price=current_price,
+                volume=position_size
+            )
+        
         # Calculate P&L
         pnl = (current_price - buy_price) * position_size
         pnl_percent = ((current_price - buy_price) / buy_price) * 100
@@ -756,8 +880,14 @@ def force_close_all_positions(state, account_balance):
         # Log trade
         insert_trade_asset((holding_asset, 'force_close', current_price, position_size))
         
-        # Update account balance
-        state['account_balance'] = state.get('account_balance', account_balance) + pnl
+        # Update state with current balance from BalanceManager
+        if balance_manager:
+            current_balance_info = balance_manager.get_current_balance()
+            state['account_balance'] = current_balance_info['balance']
+            print(f"💰 Updated Balance: R${current_balance_info['balance']:.2f}")
+        else:
+            # Fallback to manual calculation if no balance manager
+            state['account_balance'] = state.get('account_balance', account_balance) + pnl
         
         # Clear position
         state['holding_asset'] = None
@@ -790,6 +920,25 @@ if __name__ == "__main__":
             continue
     else:
         # Live trading mode (default)
-        print("Starting live trading mode...")
+        print("\nLive Trading Mode Selected")
+        print("="*40)
+        print("Choose trading environment:")
+        print("1. Paper Trading (Simulation)")
+        print("2. Live Trading (Real Money)")
+        print("="*40)
+        
+        env_mode = input("Select environment (1 or 2): ").strip()
+        paper_trading = env_mode != '2'
+        
+        if paper_trading:
+            print("🟢 PAPER TRADING MODE - Simulated orders only")
+        else:
+            print("🔴 LIVE TRADING MODE - Real money at risk!")
+            confirm = input("Are you sure? This will use real money! (y/n): ").strip().lower()
+            if confirm != 'y':
+                print("Switching to paper trading mode for safety.")
+                paper_trading = True
+        
+        print("\nStarting trading robot...")
         account_balance, risk_per_trade = balance_and_risk_management()
-        monitor_and_trade(account_balance, risk_per_trade)
+        monitor_and_trade(account_balance, risk_per_trade, paper_trading)

@@ -464,98 +464,123 @@ def run_technical_analysis():
     for ticker in tickers:
         db_ticker = map_ticker_for_db(ticker)
         print(f"Fetching all BRAPI data for {ticker}...")
-        market_data = fetch_brapi_data(ticker, interval='1d', range_='1mo')
+        
+        try:
+            market_data = fetch_brapi_data(ticker, interval='1d', range_='1mo')
 
-        if market_data:
-            print(f"Processing data for {ticker}...")
-            market_info, balance_sheet_info, historical_prices = process_market_and_balance_sheet_data(market_data, ticker)
+            if market_data:
+                print(f"Processing data for {ticker}...")
+                market_info, balance_sheet_info, historical_prices = process_market_and_balance_sheet_data(market_data, ticker)
 
-            if market_info and balance_sheet_info and historical_prices:
-                print(f"Calculating financial ratios for {ticker}...")
-                financial_ratios = calculate_financial_ratios(balance_sheet_info)
+                if market_info and balance_sheet_info and historical_prices:
+                    print(f"Calculating financial ratios for {ticker}...")
+                    financial_ratios = calculate_financial_ratios(balance_sheet_info)
 
-                print(f"Saving financial data for {db_ticker} to the database...")
-                save_balance_sheet_data((
-                    db_ticker,
-                    balance_sheet_info['endDate'],
-                    balance_sheet_info['totalCurrentAssets'],
-                    balance_sheet_info['totalCurrentLiabilities'],
-                    balance_sheet_info['totalLiab'],
-                    balance_sheet_info['totalStockholderEquity'],
-                    financial_ratios.get('current_ratio'),
-                    financial_ratios.get('debt_to_equity_ratio')
-                ))
-
-                print(f"Saving historical prices for {db_ticker} to the database...")
-                for price in historical_prices:
-                    save_historical_prices((
+                    print(f"Saving financial data for {db_ticker} to the database...")
+                    save_balance_sheet_data((
                         db_ticker,
-                        price['date'],
-                        price['open'],
-                        price['high'],
-                        price['low'],
-                        price['close'],
-                        price['volume'],
-                        price['adjustedClose']
+                        balance_sheet_info['endDate'],
+                        balance_sheet_info['totalCurrentAssets'],
+                        balance_sheet_info['totalCurrentLiabilities'],
+                        balance_sheet_info['totalLiab'],
+                        balance_sheet_info['totalStockholderEquity'],
+                        financial_ratios.get('current_ratio'),
+                        financial_ratios.get('debt_to_equity_ratio')
                     ))
 
-                print(f"Saving daily analysis for {db_ticker} to the database...")
-                close_prices = [p['close'] for p in historical_prices]
-                if not close_prices or any(c is None for c in close_prices):
-                    print(f"Skipping {ticker}: insufficient close price data.")
-                    continue  # Skip this ticker if data is missing
-                # Calculate RSI, MACD, and Signal Line
-                rsi_values = calculate_rsi(close_prices)
-                macd_values, signal_line_values = calculate_macd(close_prices)
+                    print(f"Saving historical prices for {db_ticker} to the database...")
+                    for price in historical_prices:
+                        save_historical_prices((
+                            db_ticker,
+                            price['date'],
+                            price['open'],
+                            price['high'],
+                            price['low'],
+                            price['close'],
+                            price['volume'],
+                            price['adjustedClose']
+                        ))
+
+                    print(f"Saving daily analysis for {db_ticker} to the database...")
+                    close_prices = [p['close'] for p in historical_prices]
+                    if not close_prices or any(c is None for c in close_prices):
+                        print(f"Skipping {ticker}: insufficient close price data.")
+                        continue  # Skip this ticker if data is missing
+                    # Calculate RSI, MACD, and Signal Line
+                    rsi_values = calculate_rsi(close_prices)
+                    macd_values, signal_line_values = calculate_macd(close_prices)
+                    
+                    tickers_with_data = []
+
+                    for i, price in enumerate(historical_prices):
+                        # Calculate short_ma and long_ma using moving averages
+                        short_ma = sum(close_prices[max(0, i-2):i+1]) / min(3, i+1)  # Example: 3-period moving average
+                        long_ma = sum(close_prices[:i+1]) / (i+1)  # Example: cumulative moving average
+
+                        rsi = rsi_values[i] if i < len(rsi_values) else None
+                        macd = macd_values[i] if i < len(macd_values) else None
+                        signal_line = signal_line_values[i] if i < len(signal_line_values) else None
+
+                        insert_daily_analysis((
+                            price['date'],
+                            price['close'],
+                            short_ma,
+                            long_ma,
+                            rsi,
+                            macd,
+                            signal_line,
+                            db_ticker
+                        ))
+
+                    print(f"Saving yearly analysis for {db_ticker} to the database...")
+                    insert_yearly_analysis((
+                        historical_prices[0]['date'],  # Most recent date
+                        historical_prices[0]['close'],  # Most recent close price
+                        db_ticker,
+                    ))
+
+                    print(f"Analyzing asset for {db_ticker}...")
+                    # Check if defaultKeyStatistics exists in the API response
+                    default_key_stats = market_data['results'][0].get('defaultKeyStatistics', {})
+                    if default_key_stats:
+                        asset_analysis = analyze_asset(default_key_stats, market_info['regularMarketPrice'])
+                        insert_asset_analysis((
+                            db_ticker,
+                            asset_analysis['forward_pe'],
+                            asset_analysis['profit_margins'],
+                            asset_analysis['beta'],
+                            asset_analysis['dividend_yield'],
+                            asset_analysis['peg_ratio']
+                        ))
+                    else:
+                        print(f"Warning: defaultKeyStatistics not available for {ticker}. Using default values.")
+                        # Insert default values to maintain database consistency
+                        insert_asset_analysis((
+                            db_ticker,
+                            "Data Not Available",  # forward_pe
+                            "Data Not Available",  # profit_margins
+                            "Data Not Available",  # beta
+                            0.0,                   # dividend_yield (numeric default)
+                            "Data Not Available"   # peg_ratio
+                        ))
+
+                    print(f"Preparing features and labels for {ticker}...")
+                    features, labels = prepare_features_and_labels(market_data['results'], market_info, financial_ratios)
+                    all_features.extend(features)
+                    all_labels.extend(labels)
+
+                    if features and labels:
+                        tickers_with_data.append(db_ticker)
+                        print(f"Tickers with data: {tickers_with_data}")
+                else:
+                    print(f"Warning: Incomplete data for {ticker}. Skipping.")
+            else:
+                print(f"Warning: No market data received for {ticker}. Skipping.")
                 
-                tickers_with_data = []
-
-                for i, price in enumerate(historical_prices):
-                    # Calculate short_ma and long_ma using moving averages
-                    short_ma = sum(close_prices[max(0, i-2):i+1]) / min(3, i+1)  # Example: 3-period moving average
-                    long_ma = sum(close_prices[:i+1]) / (i+1)  # Example: cumulative moving average
-
-                    rsi = rsi_values[i] if i < len(rsi_values) else None
-                    macd = macd_values[i] if i < len(macd_values) else None
-                    signal_line = signal_line_values[i] if i < len(signal_line_values) else None
-
-                    insert_daily_analysis((
-                        price['date'],
-                        price['close'],
-                        short_ma,
-                        long_ma,
-                        rsi,
-                        macd,
-                        signal_line,
-                        db_ticker
-                    ))
-
-                print(f"Saving yearly analysis for {db_ticker} to the database...")
-                insert_yearly_analysis((
-                    historical_prices[0]['date'],  # Most recent date
-                    historical_prices[0]['close'],  # Most recent close price
-                    db_ticker,
-                ))
-
-                print(f"Analyzing asset for {db_ticker}...")
-                asset_analysis = analyze_asset(market_data['results'][0]['defaultKeyStatistics'], market_info['regularMarketPrice'])
-                insert_asset_analysis((
-                    db_ticker,
-                    asset_analysis['forward_pe'],
-                    asset_analysis['profit_margins'],
-                    asset_analysis['beta'],
-                    asset_analysis['dividend_yield'],
-                    asset_analysis['peg_ratio']
-                ))
-
-                print(f"Preparing features and labels for {ticker}...")
-                features, labels = prepare_features_and_labels(market_data['results'], market_info, financial_ratios)
-                all_features.extend(features)
-                all_labels.extend(labels)
-
-                if features and labels:
-                    tickers_with_data.append(db_ticker)
-                    print(f"Tickers with data: {tickers_with_data}")
+        except Exception as e:
+            print(f"Error processing {ticker}: {e}")
+            print(f"Continuing with next ticker...")
+            continue
     print(f"Total features collected: {len(all_features)}")
     print(f"Total labels collected: {len(all_labels)}")
 

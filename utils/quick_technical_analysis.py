@@ -31,18 +31,40 @@ def get_price_signals(prices):
     if not prices or len(prices) < 2:
         return None, None, None
 
-    closes = [p['close'] for p in prices if p.get('close') is not None]
-    highs = [p['high'] for p in prices if p.get('high') is not None]
-    lows = [p['low'] for p in prices if p.get('low') is not None]
+    # Filter out invalid data (zeros and None values)
+    valid_prices = []
+    for p in prices:
+        close = p.get('close')
+        high = p.get('high') 
+        low = p.get('low')
+        
+        # Only include records with valid price data (> 0)
+        if (close is not None and close > 0 and 
+            high is not None and high > 0 and 
+            low is not None and low > 0):
+            valid_prices.append(p)
+    
+    if len(valid_prices) < 2:
+        return None, None, None
+    
+    # Use last 20 periods for signal calculation (more recent focus)
+    recent_data = valid_prices[-20:] if len(valid_prices) >= 20 else valid_prices
+    
+    closes = [p['close'] for p in recent_data]
+    highs = [p['high'] for p in recent_data]
+    lows = [p['low'] for p in recent_data]
 
     current_price = closes[-1]
     recent_high = max(highs)
     recent_low = min(lows)
 
-    # Simple logic: buy if price breaks above recent high, sell if below recent low
-    if current_price >= recent_high:
+    # Enhanced logic: buy if price is near recent high (within 2%), sell if near recent low
+    high_threshold = recent_high * 0.98  # Within 2% of recent high
+    low_threshold = recent_low * 1.02   # Within 2% of recent low
+    
+    if current_price >= high_threshold:
         signal = 'buy'
-    elif current_price <= recent_low:
+    elif current_price <= low_threshold:
         signal = 'sell'
     else:
         signal = 'hold'

@@ -283,3 +283,204 @@ def fetch_asset_analysis(ticker):
     else:
         print(f"Failed to fetch asset analysis data for {ticker}")
         return None
+
+def fetch_user_balance(user_id=None):
+    """Fetch the most recent account balance for a user."""
+    user_id = user_id or os.getenv("USER_ID")
+    try:
+        result = supabase.table("account_balance").select(
+            "balance, updated_at, source"
+        ).eq("user_id", user_id).order("updated_at", desc=True).limit(1).execute()
+        
+        if result.data and len(result.data) > 0:
+            return result.data[0]
+        else:
+            print(f"No balance record found for user {user_id}")
+            return None
+    except Exception as e:
+        print(f"Error fetching user balance: {e}")
+        return None
+
+def insert_balance_record(balance, source, user_id=None):
+    """Insert a new account balance record."""
+    user_id = user_id or os.getenv("USER_ID")
+    try:
+        result = supabase.table("account_balance").insert({
+            "user_id": user_id,
+            "balance": balance,
+            "source": source,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }).execute()
+        
+        if result:
+            print(f"Inserted balance record: R${balance:,.2f} (source: {source})")
+            return True
+        else:
+            print(f"Failed to insert balance record")
+            return False
+    except Exception as e:
+        print(f"Error inserting balance record: {e}")
+        return False
+
+def calculate_account_balance_from_trades(user_id=None, initial_balance=500.0):
+    """
+    Calculate current account balance based on complete trade history.
+    
+    This function provides a reliable balance calculation by analyzing all trades
+    and calculating the running balance including realized P&L.
+    """
+    user_id = user_id or os.getenv("USER_ID")
+    try:
+        # Fetch all trades ordered by creation time
+        result = supabase.table("trade_asset").select(
+            "ticker, type, price, volume, created_at"
+        ).eq("user_id", user_id).order("created_at", desc=False).execute()
+        
+        if not result.data:
+            print(f"No trades found for user {user_id}, returning initial balance: R${initial_balance:,.2f}")
+            return {
+                'success': True,
+                'balance': initial_balance,
+                'trade_count': 0,
+                'total_invested': 0.0,
+                'total_realized': 0.0,
+                'net_pnl': 0.0,
+                'positions': {}
+            }
+        
+        running_balance = initial_balance
+        total_invested = 0.0
+        total_realized = 0.0
+        position_tracking = {}
+        
+        print(f"📊 Calculating balance from {len(result.data)} trades...")
+        
+        for trade in result.data:
+            ticker = trade['ticker']
+            trade_type = trade['type']
+            price = float(trade['price'])
+            volume = float(trade['volume'])
+            
+            if ticker not in position_tracking:
+                position_tracking[ticker] = {
+                    'shares': 0,
+                    'total_cost': 0.0,
+                    'realized_pnl': 0.0
+                }
+            
+            if trade_type == 'buy':
+                # Buy: Reduce balance, increase position
+                cost = price * volume
+                running_balance -= cost
+                total_invested += cost
+                
+                position_tracking[ticker]['shares'] += volume
+                position_tracking[ticker]['total_cost'] += cost
+                
+                print(f"  BUY: {ticker} {volume} @ R${price:.2f} = R${cost:.2f} | Balance: R${running_balance:.2f}")
+                
+            elif trade_type in ['sell', 'force_close']:
+                # Sell: Increase balance, reduce position
+                proceeds = price * volume
+                running_balance += proceeds
+                total_realized += proceeds
+                
+                # Calculate realized P&L for this sale
+                if position_tracking[ticker]['shares'] > 0:
+                    avg_cost = position_tracking[ticker]['total_cost'] / position_tracking[ticker]['shares']
+                    shares_sold = min(volume, position_tracking[ticker]['shares'])
+                    realized_pnl = (price - avg_cost) * shares_sold
+                    
+                    position_tracking[ticker]['realized_pnl'] += realized_pnl
+                    position_tracking[ticker]['shares'] -= shares_sold
+                    position_tracking[ticker]['total_cost'] -= avg_cost * shares_sold
+                    
+                    print(f"  SELL: {ticker} {volume} @ R${price:.2f} = R${proceeds:.2f} | P&L: R${realized_pnl:.2f} | Balance: R${running_balance:.2f}")
+                else:
+                    print(f"  SELL: {ticker} {volume} @ R${price:.2f} = R${proceeds:.2f} | Balance: R${running_balance:.2f}")
+        
+        net_pnl = total_realized - total_invested
+        
+        balance_summary = {
+            'success': True,
+            'balance': running_balance,
+            'trade_count': len(result.data),
+            'total_invested': total_invested,
+            'total_realized': total_realized,
+            'net_pnl': net_pnl,
+            'positions': position_tracking,
+            'return_percentage': ((running_balance - initial_balance) / initial_balance) * 100
+        }
+        
+        print(f"💰 Balance Calculation Complete:")
+        print(f"   Current Balance: R${running_balance:,.2f}")
+        print(f"   Total Trades: {len(result.data)}")
+        print(f"   Net P&L: R${net_pnl:,.2f}")
+        print(f"   Return: {balance_summary['return_percentage']:.2f}%")
+        
+        return balance_summary
+        
+    except Exception as e:
+        print(f"Error calculating balance from trades: {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'balance': initial_balance
+        }
+
+def get_daily_trade_summary(user_id=None, date=None):
+    """Get summary of trades for a specific date."""
+    user_id = user_id or os.getenv("USER_ID")
+    date = date or datetime.now().strftime('%Y-%m-%d')
+    
+    try:
+        # Fetch trades for the specific date
+        result = supabase.table("trade_asset").select(
+            "ticker, type, price, volume, created_at"
+        ).eq("user_id", user_id).gte("created_at", f"{date}T00:00:00").lt("created_at", f"{date}T23:59:59").execute()
+        
+        if not result.data:
+            return {
+                'date': date,
+                'trade_count': 0,
+                'total_volume': 0.0,
+                'total_value': 0.0,
+                'buy_count': 0,
+                'sell_count': 0,
+                'tickers_traded': []
+            }
+        
+        buy_count = 0
+        sell_count = 0
+        total_value = 0.0
+        total_volume = 0.0
+        tickers_traded = set()
+        
+        for trade in result.data:
+            ticker = trade['ticker']
+            trade_type = trade['type']
+            price = float(trade['price'])
+            volume = float(trade['volume'])
+            
+            tickers_traded.add(ticker)
+            total_volume += volume
+            total_value += price * volume
+            
+            if trade_type == 'buy':
+                buy_count += 1
+            elif trade_type in ['sell', 'force_close']:
+                sell_count += 1
+        
+        return {
+            'date': date,
+            'trade_count': len(result.data),
+            'total_volume': total_volume,
+            'total_value': total_value,
+            'buy_count': buy_count,
+            'sell_count': sell_count,
+            'tickers_traded': list(tickers_traded)
+        }
+        
+    except Exception as e:
+        print(f"Error getting daily trade summary: {e}")
+        return None

@@ -1,5 +1,7 @@
 def calculate_forward_pe(forward_pe):
     """Analyze the Forward P/E ratio."""
+    if forward_pe is None:
+        return "Data Not Available"
     if forward_pe < 10:
         return "Undervalued"
     elif forward_pe > 20:
@@ -8,6 +10,8 @@ def calculate_forward_pe(forward_pe):
 
 def analyze_profit_margins(profit_margins):
     """Analyze profit margins."""
+    if profit_margins is None:
+        return "Data Not Available"
     if profit_margins > 0.2:
         return "High Profitability"
     elif profit_margins > 0.1:
@@ -26,8 +30,8 @@ def evaluate_beta(beta):
 
 def calculate_dividend_yield(last_dividend_value, current_price):
     """Calculate the dividend yield."""
-    if current_price == 0:
-        return "Invalid Price"
+    if last_dividend_value is None or current_price == 0 or current_price is None:
+        return 0.0  # Return numeric default for database consistency
     return (last_dividend_value / current_price) * 100
 
 def analyze_peg_ratio(peg_ratio):
