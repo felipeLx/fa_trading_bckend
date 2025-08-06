@@ -572,12 +572,50 @@ def monitor_and_trade(account_balance, risk_per_trade, paper_trading=True):
               # Update analysis timestamp
             state = update_analysis_timestamp(state)
             save_state(state)
-            
         else:
             print(f"👀 Monitoring {holding_asset} for day trading signals...")
             intraday_prices = fetch_intraday_prices(holding_asset)
             signal, high, low = get_price_signals(intraday_prices)
             print(f"📊 Signal: {signal}, High: {high}, Low: {low}")
+            
+            # ENHANCED: If current asset shows HOLD for too long, find a better one
+            if signal == 'hold':
+                print("🔄 Current asset showing HOLD - scanning for better opportunities...")
+                
+                # Quick scan of other top assets for BUY signals
+                alternative_tickers = ["AMER3", "MGLU3", "LREN3", "RENT3", "VALE3", "PETR4", "ITUB4"]
+                best_alternative = None
+                best_signal_strength = 0
+                
+                for alt_ticker in alternative_tickers:
+                    if alt_ticker == holding_asset:
+                        continue
+                    alt_prices = fetch_intraday_prices(alt_ticker)
+                    if alt_prices:
+                        alt_signal, _, _ = get_price_signals(alt_prices)
+                        if alt_signal == 'buy':
+                            print(f"   ✅ {alt_ticker}: BUY signal available")
+                            # Switch to this asset for better trading opportunity
+                            best_alternative = alt_ticker
+                            break
+                
+                if best_alternative:
+                    print(f"🔄 Switching from {holding_asset} to {best_alternative} (better opportunity)")
+                    state['holding_asset'] = best_alternative
+                    holding_asset = best_alternative
+                    
+                    # Recalculate stop loss and take profit for new asset
+                    historical_prices = fetch_historical_prices(holding_asset)
+                    stop_loss, take_profit = calculate_stop_loss_take_profit_levels(historical_prices)
+                    state['stop_loss'] = stop_loss
+                    state['take_profit'] = take_profit
+                    
+                    # Get fresh signals for new asset
+                    intraday_prices = fetch_intraday_prices(holding_asset)
+                    signal, high, low = get_price_signals(intraday_prices)
+                    print(f"📊 New asset signal: {signal}, High: {high}, Low: {low}")
+                    
+                    save_state(state)
             
             current_price = intraday_prices[0]['close'] if intraday_prices else None
             if buy_price is None and signal == 'buy' and current_price:

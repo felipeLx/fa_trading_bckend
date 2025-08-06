@@ -15,7 +15,7 @@ load_dotenv()
 class SimpleCedroTechAPI:
     """Simplified CedroTech API that doesn't require SignIn authentication"""
     
-    def __init__(self, username=None, paper_trading=True):
+    def __init__(self, username=None, paper_trading=True): 
         """
         Initialize simplified CedroTech API.
         

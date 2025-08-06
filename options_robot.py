@@ -68,97 +68,119 @@ MAX_BID_ASK_SPREAD = 0.15  # Max 15% bid/ask spread
 MIN_OPEN_INTEREST = 1000  # Minimum open interest required
 MIN_VOLUME = 10  # Minimum daily volume required
 
-# TARGET OPTIONS (from analysis)
-# Note: This will be dynamically updated by options_filter_analysis.py
-TRADEABLE_OPTIONS = [
-    {
-        'symbol': 'valeg565w2',
-        'score': 65,
-        'open_interest': 14500,
-        'underlying': 'VALE3'
-    },
-    {
-        'symbol': 'valeg545w2', 
-        'score': 50,
-        'open_interest': 4400,
-        'underlying': 'VALE3'
-    }
-]
+# TARGET OPTIONS - DYNAMICALLY UPDATED DAILY
+# Note: This is now ALWAYS updated by daily_options_discovery.py
+# No hardcoded options - fresh discovery every trading day
+TRADEABLE_OPTIONS = []  # Empty list - will be populated by daily discovery
 
 def run_options_filter_analysis():
     """
-    Run options filter analysis to get today's best options
+    Run WORKING options discovery to get today's best options
+    Uses the companyQuotes endpoint that actually returns 814+ VALE options
     
     Returns:
         list: List of best tradeable options for today
-    """
+    """    
     try:
-        print("🔍 Running daily options discovery and analysis...")
+        print("🔍 Running FINAL PRODUCTION options discovery...")
         
-        # Import and run the daily options discovery
-        import subprocess
-        import sys
+        # Use the FINAL PRODUCTION discovery system with validated APIs
+        from final_options_discovery import FinalOptionsDiscovery
         
-        # Run daily options discovery and analysis
-        result = subprocess.run([
-            sys.executable, 'daily_options_discovery.py'
-        ], capture_output=True, text=True, cwd=os.getcwd())
+        discovery_system = FinalOptionsDiscovery()
         
-        if result.returncode != 0:
-            print(f"⚠️ Daily options discovery failed: {result.stderr}")
-            print("📋 Using default options list...")
-            return TRADEABLE_OPTIONS
+        # Get today's best tradeable options using production-ready system
+        print("🌟 Using PRODUCTION FINAL discovery system...")
+        robot_options = discovery_system.get_daily_tradeable_options(max_options=15)
         
-        # Load the analysis results
-        analysis_file = 'tradeable_options_analysis.json'
-        if os.path.exists(analysis_file):
-            with open(analysis_file, 'r') as f:
-                analysis_results = json.load(f)
+        if robot_options:
+            print(f"✅ FINAL PRODUCTION discovery found {len(robot_options)} REAL options")
+            print("🏆 Top options from production API:")
             
-            # Extract top 5 tradeable options
-            tradeable_options = analysis_results.get('tradeable_options', [])
+            for i, opt in enumerate(robot_options[:5]):  # Show top 5
+                print(f"   {i+1}. {opt['symbol']} ({opt['underlying']}) - Score: {opt['score']}/100")
+                print(f"      Rating: {opt['rating']} | OI: {opt['open_interest']:,} | Vol: {opt['volume']} | Spread: {opt['spread_pct']:.1f}%")
+                print(f"      Type: {opt.get('option_type', 'unknown')} | Real Quotes: {'✅' if opt.get('has_real_quotes') else '❌'}")
+                if opt['strengths']:
+                    print(f"      ✅ Strengths: {', '.join(opt['strengths'][:2])}")  # Show top 2 strengths
+                if opt['warnings']:
+                    print(f"      ⚠️ Warnings: {', '.join(opt['warnings'][:2])}")   # Show top 2 warnings
             
-            if tradeable_options:
-                # Convert to robot format
-                robot_options = []
-                for option in tradeable_options[:8]:  # Top 8 options for more diversity
-                    option_data = option.get('option_data', {})
-                    
-                    # Extract underlying from the option data
-                    underlying = option_data.get('underlying', 'UNKNOWN')
-                    
-                    robot_option = {
-                        'symbol': option.get('symbol', ''),
-                        'score': option.get('quality_score', 0),
-                        'open_interest': option_data.get('open_interest', 0),
-                        'underlying': underlying,
-                        'rating': option.get('overall_rating', 'UNKNOWN'),
-                        'liquidity_rating': option.get('liquidity_rating', 'UNKNOWN'),
-                        'volume': option_data.get('volume', 0),
-                        'bid': option_data.get('bid', 0),
-                        'ask': option_data.get('ask', 0)
-                    }
-                    robot_options.append(robot_option)
-                
-                print(f"✅ Found {len(robot_options)} tradeable options from daily analysis")
-                print("🏆 Top options for today:")
-                for i, opt in enumerate(robot_options[:5]):  # Show top 5
-                    print(f"   {i+1}. {opt['symbol']} ({opt['underlying']}) - Score: {opt['score']}, Rating: {opt['rating']}")
-                
-                return robot_options
-            else:
-                print("⚠️ No tradeable options found in daily analysis")
-                print("📋 Using default options list...")
-                return TRADEABLE_OPTIONS
+            return robot_options
         else:
-            print(f"⚠️ Analysis file {analysis_file} not found")
-            print("📋 Using default options list...")
-            return TRADEABLE_OPTIONS
+            print("⚠️ Production discovery found no options today")
+            print("🔄 Trying fallback discovery methods...")
+            
+            # Fallback to working discovery if production fails
+            try:
+                from working_options_discovery import WorkingOptionsDiscovery
+                working_discovery = WorkingOptionsDiscovery()
+                working_options = working_discovery.get_daily_tradeable_options(max_options=10)
+                
+                if working_options:
+                    print(f"✅ Working fallback found {len(working_options)} options")
+                    return working_options
+                else:
+                    print("❌ Working fallback also found no options")
+                    
+            except Exception as enhanced_error:
+                print(f"❌ Enhanced fallback failed: {enhanced_error}")
+            
+            # Final fallback to daily discovery
+            try:
+                import subprocess
+                import sys
+                
+                result = subprocess.run([
+                    sys.executable, 'daily_options_discovery.py'
+                ], capture_output=True, text=True, cwd=os.getcwd())
+                
+                if result.returncode == 0:
+                    # Load and process fallback results
+                    analysis_file = 'tradeable_options_analysis.json'
+                    if os.path.exists(analysis_file):
+                        with open(analysis_file, 'r') as f:
+                            analysis_results = json.load(f)
+                        
+                        tradeable_options = analysis_results.get('tradeable_options', [])
+                        if tradeable_options:
+                            # Convert fallback format to robot format
+                            fallback_options = []
+                            for option in tradeable_options[:6]:
+                                option_data = option.get('option_data', {})
+                                fallback_option = {
+                                    'symbol': option.get('symbol', ''),
+                                    'score': option.get('quality_score', 0),
+                                    'open_interest': option_data.get('open_interest', 0),
+                                    'underlying': option_data.get('underlying', 'UNKNOWN'),
+                                    'rating': option.get('overall_rating', 'UNKNOWN'),
+                                    'liquidity_rating': option.get('liquidity_rating', 'UNKNOWN'),
+                                    'volume': option_data.get('volume', 0),
+                                    'bid': option_data.get('bid', 0),
+                                    'ask': option_data.get('ask', 0),
+                                    'last_trade': option_data.get('last_trade', 0),
+                                    'spread_pct': 0,
+                                    'discovery_timestamp': datetime.now().isoformat(),
+                                    'strengths': option.get('strengths', []),
+                                    'warnings': option.get('warnings', []),
+                                    'discovery_method': 'fallback'
+                                }
+                                fallback_options.append(fallback_option)
+                            
+                            print(f"✅ Final fallback found {len(fallback_options)} options")
+                            return fallback_options
+            except Exception as fallback_error:
+                print(f"❌ Final fallback also failed: {fallback_error}")
+            
+            print("❌ All discovery methods failed - robot will wait for market opportunities")
+            return []
             
     except Exception as e:
-        print(f"❌ Error running daily options discovery: {e}")
-        print("📋 Using default options list...")
-        return TRADEABLE_OPTIONS
+        print(f"❌ Error in working options discovery: {e}")
+        import traceback
+        traceback.print_exc()
+        print("📊 Robot will wait for trading opportunities...")
+        return []
 
 def initialize_options_api(paper_trading=True):
     """Initialize CedroTech Options API for live trading"""
@@ -393,16 +415,24 @@ def monitor_and_trade_options(account_balance, paper_trading=True):
     balance_manager = BalanceManager(api=api)
     
     # Load state
-    state = load_options_state()
-      # Initialize daily tracking if new day
+    state = load_options_state()    # Initialize daily tracking if new day
     today = datetime.now().strftime('%Y-%m-%d')
     if state.get('trading_date') != today:
         balance_info = balance_manager.get_current_balance()
         current_balance = balance_info['balance']
         
         # Run daily options analysis to get best options for today
-        print("🎯 Getting today's best options from filter analysis...")
+        print("🎯 Getting today's FRESH options from daily discovery...")
         daily_options = run_options_filter_analysis()
+        
+        # Check if we have valid options for trading
+        if not daily_options:
+            print("⚠️ No tradeable options found for today!")
+            print("📊 This could mean:")
+            print("   - Market is closed")
+            print("   - Low volatility day")
+            print("   - API connection issues")
+            print("🔄 Robot will retry discovery every 30 minutes...")
         
         state['trading_date'] = today
         state['daily_trades_count'] = 0
@@ -410,14 +440,39 @@ def monitor_and_trade_options(account_balance, paper_trading=True):
         state['account_balance'] = current_balance
         state['daily_pnl'] = 0
         state['daily_options_list'] = daily_options  # Store today's options
+        state['last_options_refresh'] = datetime.now().isoformat()
         save_options_state(state)
         
         print(f"🌅 New options trading day: {today}")
         print(f"💰 Starting balance: R${current_balance:.2f}")
-        print(f"🎯 Today's target options: {len(daily_options)} options loaded")
+        if daily_options:
+            print(f"🎯 Today's target options: {len(daily_options)} FRESH options loaded")
+        else:
+            print("⚠️ No target options - robot will wait for opportunities")
     else:
-        # Use stored options for the day
-        daily_options = state.get('daily_options_list', TRADEABLE_OPTIONS)
+        # Use stored options for the day, but refresh if too old
+        daily_options = state.get('daily_options_list', [])
+        last_refresh = state.get('last_options_refresh', '')
+        
+        # Refresh options every 2 hours during market hours
+        if last_refresh:
+            try:
+                last_refresh_time = datetime.fromisoformat(last_refresh)
+                hours_since_refresh = (datetime.now() - last_refresh_time).total_seconds() / 3600
+                
+                if hours_since_refresh > 2 and is_market_hours():
+                    print("🔄 Options list is 2+ hours old - refreshing...")
+                    fresh_options = run_options_filter_analysis()
+                    if fresh_options:  # Only update if we get valid options
+                        daily_options = fresh_options
+                        state['daily_options_list'] = daily_options
+                        state['last_options_refresh'] = datetime.now().isoformat()
+                        save_options_state(state)
+                        print(f"✅ Options list refreshed: {len(daily_options)} options")
+                    else:
+                        print("⚠️ Refresh failed - keeping current options list")
+            except:
+                pass  # Keep current options if refresh time parsing fails
         
     print(f"📊 Daily Limits: Max {MAX_DAILY_OPTIONS_TRADES} trades, Max {DAILY_LOSS_LIMIT*100}% loss")
     print(f"🎯 Target Options: {len(daily_options)} pre-analyzed options")
@@ -448,12 +503,29 @@ def monitor_and_trade_options(account_balance, paper_trading=True):
         if current_pnl_percent <= -(DAILY_LOSS_LIMIT * 100):
             print(f"🛑 Daily loss limit reached ({DAILY_LOSS_LIMIT*100}%). Stopping options trading.")
             break
-        
         holding_option = state.get('holding_option')
         
         if holding_option is None:
             print("\n🔍 Scanning for options trading opportunities...")
-              # Analyze each pre-qualified option
+            
+            # Check if we have any options to analyze
+            if not daily_options:
+                print("⚠️ No options available for trading today")
+                print("🔄 Trying to refresh options list...")
+                
+                # Try to get fresh options
+                fresh_options = run_options_filter_analysis()
+                if fresh_options:
+                    daily_options = fresh_options
+                    state['daily_options_list'] = daily_options
+                    state['last_options_refresh'] = datetime.now().isoformat()
+                    save_options_state(state)
+                    print(f"✅ Got {len(fresh_options)} fresh options")
+                else:
+                    print("⏳ No options available - waiting 30 minutes before retry...")
+                    time.sleep(1800)  # Wait 30 minutes
+                    continue
+              # Analyze each pre-qualified option using enhanced scoring
             best_option = None
             best_score = 0
             
@@ -470,39 +542,78 @@ def monitor_and_trade_options(account_balance, paper_trading=True):
                     print(f"   Spread: {validation['spread_percent']:.1f}%")
                     print(f"   Volume: {validation['volume']}")
                     print(f"   Open Interest: {validation['open_interest']:,}")
-                    print(f"   Pre-analysis Score: {option_info['score']}")
+                    print(f"   Quality Score: {option_info.get('score', 0)}/100")
+                    print(f"   Day Trade Score: {option_info.get('day_trade_score', 0)}/100")
                     print(f"   Rating: {option_info.get('rating', 'N/A')}")
                     
-                    # Score this option (combine pre-analysis score with current metrics)
-                    current_score = option_info['score']
+                    # Enhanced scoring system (combines multiple factors)
+                    base_score = option_info.get('score', 0)  # Quality score from analysis
+                    day_trade_score = option_info.get('day_trade_score', 0)  # Day trading suitability
                     
-                    # Bonus for tight spreads and good volume
-                    if validation['spread_percent'] < 5:
+                    # Start with the higher of the two scores
+                    current_score = max(base_score, day_trade_score)
+                    
+                    # Real-time validation bonuses
+                    if validation['spread_percent'] < 3:
+                        current_score += 20
+                        print(f"   ✅ BONUS: Excellent spread (+20)")
+                    elif validation['spread_percent'] < 7:
                         current_score += 10
-                    if validation['volume'] > 50:
-                        current_score += 5
+                        print(f"   ✅ BONUS: Good spread (+10)")
                     
-                    # Bonus for excellent ratings from analysis
-                    if option_info.get('rating') == 'EXCELLENT':
+                    if validation['volume'] > 100:
                         current_score += 15
-                    elif option_info.get('rating') == 'GOOD':
-                        current_score += 10
+                        print(f"   ✅ BONUS: High volume today (+15)")
+                    elif validation['volume'] > 50:
+                        current_score += 8
+                        print(f"   ✅ BONUS: Good volume today (+8)")
                     
-                    if current_score > best_score:
-                        best_score = current_score
+                    if validation['open_interest'] > 5000:
+                        current_score += 15
+                        print(f"   ✅ BONUS: Excellent liquidity (+15)")
+                    elif validation['open_interest'] > 2000:
+                        current_score += 8
+                        print(f"   ✅ BONUS: Good liquidity (+8)")
+                    
+                    # Rating-based bonuses (from enhanced analysis)
+                    rating_bonus = 0
+                    if option_info.get('rating') == 'EXCELLENT':
+                        rating_bonus = 25
+                    elif option_info.get('rating') == 'GOOD':
+                        rating_bonus = 15
+                    elif option_info.get('rating') == 'ACCEPTABLE':
+                        rating_bonus = 8
+                    
+                    if rating_bonus > 0:
+                        current_score += rating_bonus
+                        print(f"   ✅ BONUS: {option_info.get('rating')} rating (+{rating_bonus})")
+                    
+                    # Final score calculation
+                    final_score = min(current_score, 150)  # Cap at 150
+                    print(f"   🎯 FINAL SCORE: {final_score}/150")
+                    
+                    if final_score > best_score:
+                        best_score = final_score
                         best_option = {
                             'symbol': symbol,
-                            'score': current_score,
+                            'score': final_score,
+                            'base_score': base_score,
+                            'day_trade_score': day_trade_score,
                             'validation': validation,
                             'underlying': option_info['underlying'],
-                            'rating': option_info.get('rating', 'N/A')
+                            'rating': option_info.get('rating', 'N/A'),
+                            'option_info': option_info  # Keep full option info
                         }
                 else:
                     print(f"❌ {symbol} not tradeable: {validation['reason']}")
             
             if best_option:
-                print(f"\n🎯 Selected option: {best_option['symbol']} (Score: {best_option['score']})")
-                  # Calculate position size
+                print(f"\n🎯 SELECTED OPTION: {best_option['symbol']}")
+                print(f"   📊 Final Score: {best_option['score']}/150")
+                print(f"   📈 Quality: {best_option['base_score']}/100 | Day Trade: {best_option['day_trade_score']}/100")
+                print(f"   🏆 Rating: {best_option['rating']} | Underlying: {best_option['underlying']}")
+                
+                # Calculate position size
                 option_price = best_option['validation']['ask']  # Use ask price for buying
                 contracts = calculate_option_position_size(
                     state['account_balance'], 
@@ -532,16 +643,28 @@ def monitor_and_trade_options(account_balance, paper_trading=True):
                 )
                 
                 if order_result.get('success'):
-                    print(f"✅ Options buy order executed: {order_result.get('order_id')}")
-                      # Send email notification
+                    print(f"✅ Options buy order executed: {order_result.get('order_id')}")                    # Send enhanced email notification
+                    option_info = best_option['option_info']
                     send_email(
-                        "OPTIONS TRADE - BUY", 
-                        f"Bought {contracts} contracts of {best_option['symbol']} at R${option_price:.2f}\n"
-                        f"Total premium paid: R${contracts * option_price:.2f}\n"
-                        f"Underlying: {best_option['underlying']}\n"
-                        f"Final Score: {best_option['score']}\n"
-                        f"Analysis Rating: {best_option.get('rating', 'N/A')}\n"
-                        f"Current Spread: {best_option['validation']['spread_percent']:.1f}%"
+                        "🎯 OPTIONS TRADE - BUY (Enhanced)", 
+                        f"📊 ENHANCED OPTIONS TRADE EXECUTED\n"
+                        f"{'='*50}\n"
+                        f"Symbol: {best_option['symbol']} ({best_option['underlying']})\n"
+                        f"Contracts: {contracts} at R${option_price:.2f}\n"
+                        f"Total Premium: R${contracts * option_price:.2f}\n\n"
+                        f"📈 SCORING BREAKDOWN:\n"
+                        f"Final Score: {best_option['score']}/150\n"
+                        f"Quality Score: {best_option['base_score']}/100\n"
+                        f"Day Trade Score: {best_option['day_trade_score']}/100\n"
+                        f"Rating: {best_option['rating']}\n\n"
+                        f"📊 MARKET DATA:\n"
+                        f"Spread: {best_option['validation']['spread_percent']:.1f}%\n"
+                        f"Volume Today: {best_option['validation']['volume']}\n"
+                        f"Open Interest: {best_option['validation']['open_interest']:,}\n"
+                        f"Bid/Ask: {best_option['validation']['bid']:.2f}/{best_option['validation']['ask']:.2f}\n\n"
+                        f"✅ KEY STRENGTHS:\n" + '\n'.join(f"• {s}" for s in option_info.get('strengths', [])[:3]) + "\n\n"
+                        f"⚠️ WARNINGS:\n" + '\n'.join(f"• {w}" for w in option_info.get('warnings', [])[:2]) + "\n\n"
+                        f"🕐 Discovery Time: {option_info.get('discovery_timestamp', 'N/A')}"
                     )
                     
                     # Update balance after successful buy order

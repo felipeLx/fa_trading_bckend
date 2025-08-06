@@ -27,10 +27,13 @@ def fetch_recent_prices(ticker, interval='5m', range_='1d'):
         return None
 
 def get_price_signals(prices):
-    """Determine buy/sell/hold signal based on recent high/low."""
+    """Enhanced day trading signal generation - MUCH MORE AGGRESSIVE than before."""
     if not prices or len(prices) < 2:
         return None, None, None
 
+    # Import the enhanced signal function
+    from enhanced_day_trading_signals import enhanced_day_trading_signal
+    
     # Filter out invalid data (zeros and None values)
     valid_prices = []
     for p in prices:
@@ -47,28 +50,18 @@ def get_price_signals(prices):
     if len(valid_prices) < 2:
         return None, None, None
     
-    # Use last 20 periods for signal calculation (more recent focus)
-    recent_data = valid_prices[-20:] if len(valid_prices) >= 20 else valid_prices
+    # Use enhanced signal generation
+    signal, confidence, details = enhanced_day_trading_signal(valid_prices)
     
-    closes = [p['close'] for p in recent_data]
-    highs = [p['high'] for p in recent_data]
-    lows = [p['low'] for p in recent_data]
-
-    current_price = closes[-1]
-    recent_high = max(highs)
-    recent_low = min(lows)
-
-    # Enhanced logic: buy if price is near recent high (within 2%), sell if near recent low
-    high_threshold = recent_high * 0.98  # Within 2% of recent high
-    low_threshold = recent_low * 1.02   # Within 2% of recent low
+    # Extract high/low for compatibility
+    recent_high = details.get('recent_high', 0)
+    recent_low = details.get('recent_low', 0)
     
-    if current_price >= high_threshold:
-        signal = 'buy'
-    elif current_price <= low_threshold:
-        signal = 'sell'
-    else:
-        signal = 'hold'
-
+    # Log the enhanced analysis for debugging
+    print(f"🎯 ENHANCED SIGNAL: {signal.upper()} ({confidence}% confidence)")
+    if details.get('reasons'):
+        print(f"   📋 Reasons: {', '.join(details['reasons'][:2])}")  # Show top 2 reasons
+    
     return signal, recent_high, recent_low
 
 def fetch_and_store_intraday(ticker, interval='5m', range_='1d'):

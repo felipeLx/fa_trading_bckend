@@ -361,7 +361,7 @@ class CedroTechOptionsAPI:
 
     def get_asset_info(self, ticker):
         """
-        Get detailed information about an asset (Consultar Informações de um Ativo)
+        Get detailed information about an asset using the correct API endpoint
         
         Args:
             ticker (str): Asset ticker
@@ -372,18 +372,20 @@ class CedroTechOptionsAPI:
         if not self.authenticated or not self.session:
             print(f"❌ Not authenticated. Call authenticate() first.")
             return {"success": False, "error": "Not authenticated"}
+            
         try:
-            # "Consultar Informações de um Ativo" endpoint
-            url = f"{self.base_url}/services/quotes/assetInfo/{ticker}"
+            # Use the correct endpoint according to API documentation
+            url = f"{self.base_url}/services/quotes/quoteInformation"
+            params = {"description": ticker}
             
             headers = {
                 "accept": "application/json"
             }
             
             print(f"ℹ️  Getting asset info for {ticker}...")
-            print(f"   URL: {url}")
+            print(f"   URL: {url}?description={ticker}")
             
-            response = self.session.get(url, headers=headers)
+            response = self.session.get(url, headers=headers, params=params)
             
             print(f"   Status: {response.status_code}")
             
@@ -419,6 +421,74 @@ class CedroTechOptionsAPI:
                 
         except Exception as e:
             print(f"   💥 Error getting asset info: {e}")
+            return {
+                "success": False,
+                "ticker": ticker,
+                "error": str(e)
+            }
+
+    def get_option_quote(self, ticker):
+        """
+        Get real-time trading quote for an option (bid, ask, volume, etc.)
+        This is different from get_asset_info which only returns metadata
+        
+        Args:
+            ticker (str): Option ticker
+            
+        Returns:
+            dict: Real-time quote data including bid, ask, volume, open interest
+        """
+        if not self.authenticated or not self.session:
+            print(f"❌ Not authenticated. Call authenticate() first.")
+            return {"success": False, "error": "Not authenticated"}
+            
+        try:
+            # Use the quotes endpoint for real-time trading data
+            url = f"{self.base_url}/services/quotes/quote/{ticker}"
+            
+            headers = {
+                "accept": "application/json"
+            }
+            
+            print(f"💰 Getting real-time quote for {ticker}...")
+            print(f"   URL: {url}")
+            
+            response = self.session.get(url, headers=headers)
+            
+            print(f"   Status: {response.status_code}")
+            
+            if response.status_code == 200:
+                try:
+                    quote_data = response.json()
+                    print(f"   ✅ Real-time quote received for {ticker}")
+                    
+                    return {
+                        "success": True,
+                        "ticker": ticker,
+                        "data": quote_data,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                except json.JSONDecodeError:
+                    print(f"   ⚠️  Non-JSON response received")
+                    return {
+                        "success": True,
+                        "ticker": ticker,
+                        "raw_response": response.text,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+            else:
+                print(f"   ❌ Failed to get quote: {response.status_code}")
+                return {
+                    "success": False,
+                    "ticker": ticker,
+                    "error": f"HTTP {response.status_code}",
+                    "raw_response": response.text
+                }
+                
+        except Exception as e:
+            print(f"   💥 Error getting quote: {e}")
             return {
                 "success": False,
                 "ticker": ticker,
